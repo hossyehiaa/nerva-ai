@@ -249,6 +249,24 @@ export default function DashboardPage({ onNavigate }: DashboardPageProps) {
           >
             <Plus className="w-4 h-4 mr-2" /> Create Business
           </Button>
+          <div className="flex items-center justify-center gap-4 mt-6">
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={handleBackToHome}
+              className="text-muted-foreground hover:text-foreground"
+            >
+              <Home className="w-4 h-4 mr-1.5" /> Back to Home
+            </Button>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={handleLogout}
+              className="text-muted-foreground hover:text-foreground"
+            >
+              <LogOut className="w-4 h-4 mr-1.5" /> Sign Out
+            </Button>
+          </div>
         </div>
       </div>
     );

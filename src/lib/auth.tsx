@@ -18,7 +18,6 @@ interface Business {
   systemPrompt: string;
   apiKey: string;
   subscriptionStatus: string;
-  agentLimit: number;
   leadLimit: number;
   createdAt: string;
   agents?: Agent[];
@@ -51,7 +50,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const refreshUser = async () => {
     try {
-      const res = await fetch('/api/auth/me');
+      // Add timeout to prevent infinite loading on cold starts
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 8000);
+
+      const res = await fetch('/api/auth/me', { signal: controller.signal });
+      clearTimeout(timeoutId);
+
       if (res.ok) {
         const data = await res.json();
         setUser(data);
@@ -71,34 +76,48 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const login = async (email: string, password: string) => {
     try {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 15000);
+
       const res = await fetch('/api/auth/login', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email, password }),
+        signal: controller.signal,
       });
+      clearTimeout(timeoutId);
 
       const data = await res.json();
 
       if (res.ok) {
         // Wait a tick for cookie to be set, then refresh user
-        await new Promise(resolve => setTimeout(resolve, 100));
+        await new Promise(resolve => setTimeout(resolve, 200));
         await refreshUser();
         return { success: true };
       }
       return { success: false, error: data.error || 'Login failed' };
     } catch (error) {
       console.error('Login fetch error:', error);
+      if (error instanceof DOMException && error.name === 'AbortError') {
+        return { success: false, error: 'Request timed out. Please try again.' };
+      }
       return { success: false, error: 'Network error. Please check your connection and try again.' };
     }
   };
 
   const register = async (email: string, password: string, name: string) => {
     try {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 15000);
+
       const res = await fetch('/api/auth/register', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email, password, name }),
+        signal: controller.signal,
       });
+      clearTimeout(timeoutId);
+
       const data = await res.json();
       if (res.ok) {
         // Auto-login after registration
@@ -107,6 +126,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       return { success: false, error: data.error || 'Registration failed' };
     } catch (error) {
       console.error('Register fetch error:', error);
+      if (error instanceof DOMException && error.name === 'AbortError') {
+        return { success: false, error: 'Request timed out. Please try again.' };
+      }
       return { success: false, error: 'Network error. Please check your connection and try again.' };
     }
   };

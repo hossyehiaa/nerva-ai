@@ -52,9 +52,10 @@ export async function POST(req: NextRequest) {
       token,
     });
 
+    // Cookie settings optimized for Vercel (HTTPS) deployment
     response.cookies.set('nerva-token', token, {
       httpOnly: true,
-      secure: true,
+      secure: process.env.NODE_ENV === 'production',
       sameSite: 'lax',
       maxAge: 60 * 60 * 24 * 7, // 7 days
       path: '/',

@@ -13,13 +13,24 @@ import Footer from '@/components/sections/Footer';
 import LoginPage from '@/components/app/LoginPage';
 import DashboardPage from '@/components/app/DashboardPage';
 import OnboardingPage from '@/components/app/OnboardingPage';
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 
 function AppRouter() {
   const { user, loading } = useAuth();
   const [page, setPage] = useState<'home' | 'login' | 'dashboard' | 'onboarding'>('home');
+  const [loadingTimeout, setLoadingTimeout] = useState(false);
 
-  if (loading) {
+  // If loading takes too long (e.g., cold start), show the landing page anyway
+  useEffect(() => {
+    if (loading) {
+      const timer = setTimeout(() => {
+        setLoadingTimeout(true);
+      }, 5000);
+      return () => clearTimeout(timer);
+    }
+  }, [loading]);
+
+  if (loading && !loadingTimeout) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-nerva-dark">
         <div className="flex flex-col items-center gap-4">
@@ -34,8 +45,11 @@ function AppRouter() {
     );
   }
 
+  // If loading timed out, treat as not logged in and show landing page
+  const effectiveUser = loadingTimeout ? null : user;
+
   // Logged in pages
-  if (user) {
+  if (effectiveUser) {
     if (page === 'onboarding') {
       return <OnboardingPage onComplete={() => setPage('dashboard')} />;
     }
