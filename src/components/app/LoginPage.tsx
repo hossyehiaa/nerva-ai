@@ -4,7 +4,7 @@ import { useState } from 'react';
 import { useAuth } from '@/lib/auth';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Zap, Mail, Lock, User, ArrowLeft, Loader2 } from 'lucide-react';
+import { Zap, Mail, Lock, User, ArrowLeft, Loader2, AlertCircle } from 'lucide-react';
 
 interface LoginPageProps {
   onBack: () => void;
@@ -22,18 +22,38 @@ export default function LoginPage({ onBack }: LoginPageProps) {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
+
+    // Client-side validation
+    if (!email.trim()) {
+      setError('Please enter your email address');
+      return;
+    }
+    if (!password) {
+      setError('Please enter your password');
+      return;
+    }
+    if (password.length < 6) {
+      setError('Password must be at least 6 characters');
+      return;
+    }
+    if (isRegister && !name.trim()) {
+      setError('Please enter your name');
+      return;
+    }
+
     setLoading(true);
 
     try {
       const result = isRegister
-        ? await register(email, password, name)
-        : await login(email, password);
+        ? await register(email.trim(), password, name.trim())
+        : await login(email.trim(), password);
 
       if (!result.success) {
-        setError(result.error || 'Something went wrong');
+        setError(result.error || 'Something went wrong. Please try again.');
       }
+      // If success, auth context will update user state and AppRouter will redirect
     } catch {
-      setError('An unexpected error occurred');
+      setError('An unexpected error occurred. Please try again.');
     } finally {
       setLoading(false);
     }
@@ -80,13 +100,14 @@ export default function LoginPage({ onBack }: LoginPageProps) {
 
           {/* Error */}
           {error && (
-            <div className="mb-4 p-3 rounded-lg bg-red-500/10 border border-red-500/20 text-red-400 text-sm">
-              {error}
+            <div className="mb-4 p-3 rounded-lg bg-red-500/10 border border-red-500/20 text-red-400 text-sm flex items-start gap-2">
+              <AlertCircle className="w-4 h-4 flex-shrink-0 mt-0.5" />
+              <span>{error}</span>
             </div>
           )}
 
           {/* Form */}
-          <form onSubmit={handleSubmit} className="space-y-4">
+          <form onSubmit={handleSubmit} className="space-y-4" noValidate>
             {isRegister && (
               <div className="relative">
                 <User className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
@@ -96,7 +117,6 @@ export default function LoginPage({ onBack }: LoginPageProps) {
                   value={name}
                   onChange={(e) => setName(e.target.value)}
                   className="pl-10 bg-muted/50 border-nerva-border focus:border-nerva-cyan/50 h-12 rounded-xl"
-                  required={isRegister}
                 />
               </div>
             )}
@@ -108,19 +128,16 @@ export default function LoginPage({ onBack }: LoginPageProps) {
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 className="pl-10 bg-muted/50 border-nerva-border focus:border-nerva-cyan/50 h-12 rounded-xl"
-                required
               />
             </div>
             <div className="relative">
               <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
               <Input
                 type="password"
-                placeholder="Password"
+                placeholder="Password (min 6 characters)"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 className="pl-10 bg-muted/50 border-nerva-border focus:border-nerva-cyan/50 h-12 rounded-xl"
-                required
-                minLength={6}
               />
             </div>
 

@@ -4,7 +4,7 @@ export async function POST() {
   const response = NextResponse.json({ success: true });
   response.cookies.set('nerva-token', '', {
     httpOnly: true,
-    secure: process.env.NODE_ENV === 'production',
+    secure: true,
     sameSite: 'lax',
     maxAge: 0,
     path: '/',

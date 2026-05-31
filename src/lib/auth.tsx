@@ -76,14 +76,19 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email, password }),
       });
+
       const data = await res.json();
+
       if (res.ok) {
+        // Wait a tick for cookie to be set, then refresh user
+        await new Promise(resolve => setTimeout(resolve, 100));
         await refreshUser();
         return { success: true };
       }
       return { success: false, error: data.error || 'Login failed' };
-    } catch {
-      return { success: false, error: 'Network error' };
+    } catch (error) {
+      console.error('Login fetch error:', error);
+      return { success: false, error: 'Network error. Please check your connection and try again.' };
     }
   };
 
@@ -100,13 +105,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         return await login(email, password);
       }
       return { success: false, error: data.error || 'Registration failed' };
-    } catch {
-      return { success: false, error: 'Network error' };
+    } catch (error) {
+      console.error('Register fetch error:', error);
+      return { success: false, error: 'Network error. Please check your connection and try again.' };
     }
   };
 
   const logout = async () => {
-    await fetch('/api/auth/logout', { method: 'POST' });
+    try {
+      await fetch('/api/auth/logout', { method: 'POST' });
+    } catch {
+      // Ignore logout errors
+    }
     setUser(null);
   };
 
