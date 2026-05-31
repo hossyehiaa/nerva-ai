@@ -1,32 +1,34 @@
+# Nerva AI - Worklog
+
 ---
 Task ID: 1
 Agent: Main Agent
-Task: Build professional Nerva AI website based on GitHub repository
+Task: Build complete Nerva AI SaaS platform with backend, auth, AI agent builder, subscription gating
 
 Work Log:
-- Explored GitHub repo hossyehiaa/nucleus-ai (Flask SaaS app with AI agents, WhatsApp integration, dashboard, CRM)
-- Analyzed existing codebase: routes, templates, models, styling, i18n, dark theme
-- Initialized Next.js 16 project with fullstack-dev skill
-- Generated AI logo (nerva-logo.png) and hero background (hero-bg.png) + dashboard mockup (dashboard-mockup.png)
-- Built complete single-page professional website with sections:
-  - Navbar (fixed, glassmorphism, mobile responsive)
-  - Hero (animated, stats, CTA buttons, dashboard preview)
-  - WhyNerva (6 benefit cards with stats)
-  - Services (7 services with Arabic subtitles, feature tags, popular badges)
-  - HowItWorks (3-step process with check items)
-  - Pricing (3 plans with monthly/annual toggle, EGP pricing)
-  - FAQ (8 interactive accordion items)
-  - CTA (email signup form with trust indicators)
-  - Footer (4-column links, social icons, branding)
-- Applied dark tech/SaaS theme with custom CSS (glassmorphism, gradient text, glow effects, grid backgrounds)
-- Framer Motion animations throughout (scroll-triggered, stagger effects)
-- Fully responsive (mobile-first with Tailwind breakpoints)
-- SEO optimized with comprehensive metadata, Open Graph, Twitter cards
-- Fixed lint errors (missing Zap import)
-- Verified page compiles and renders successfully (200 status)
+- Reviewed existing project structure (Next.js 16, Prisma, SQLite, shadcn/ui)
+- Found existing auth system (JWT-based), API routes, dashboard, and onboarding
+- Fixed OnboardingPage.tsx bug (framer-motion import at bottom of file)
+- Enhanced OnboardingPage with Step 4: Interactive AI agent builder animation + test chat
+- Updated Prisma schema: added Agent.systemPrompt, Conversation.agentId, Subscription model
+- Enhanced Dashboard with Subscription tab (Free/Starter/Pro/Agency plans)
+- Added subscription gating (agent limits: Free=1, Starter=3, Pro=7, Agency=unlimited)
+- Added per-agent chat conversations with agent selection sidebar
+- Added agent-specific system prompts (WhatsApp, Barista, Knowledge, LeadGen, Content, Workflow, Voice)
+- Added subscription check in backend API (returns 403 when limit reached)
+- Added mobile navigation menu with dropdown
+- Added toast notifications for all user actions
+- Added Back to Home button in sidebar
+- Set up PostgreSQL/SQLite dual schema for Vercel compatibility
+- Changed Vercel project name from "my-project" to "nervaai"
+- Added nerva-ai.vercel.app domain
+- Removed old my-project-mu-rouge.vercel.app domain
+- Deployed to Vercel production
 
 Stage Summary:
-- Professional Nerva AI website fully built and running on localhost:3000
-- Dark tech theme with cyan/blue/purple gradient accents
-- 9 component sections covering all business services and offerings
-- Ready for Vercel/Render deployment
+- Full SaaS platform with auth, onboarding, dashboard, agent builder, chat, leads, settings, subscription
+- Landing page: https://nerva-ai.vercel.app (100% working)
+- GitHub: https://github.com/hossyehiaa/nerva-ai
+- Backend API: All routes implemented (auth, business, agents, chat, leads)
+- Database: SQLite for local dev, PostgreSQL schema ready for production
+- **IMPORTANT**: To make API routes work on Vercel, user needs to create a free PostgreSQL database (Neon/Supabase) and set DATABASE_URL env var
