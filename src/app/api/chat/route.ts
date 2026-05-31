@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
+import { WorkflowEngine } from '@/lib/workflow-engine';
 
 export async function POST(req: NextRequest) {
   try {
@@ -83,7 +84,7 @@ export async function POST(req: NextRequest) {
     if (leadMatch) {
       const leadName = leadMatch[1];
       const leadPhone = leadMatch[2];
-      await db.lead.create({
+      const newLead = await db.lead.create({
         data: {
           businessId,
           customerName: leadName,
@@ -94,6 +95,8 @@ export async function POST(req: NextRequest) {
       });
       // Remove the lead tag from display
       aiResponse = aiResponse.replace(leadRegex, '').trim();
+      // Fire workflow trigger for new lead
+      WorkflowEngine.fireTrigger('new_lead', businessId, { leadId: newLead.id, name: leadName, phone: leadPhone }).catch(() => {});
     }
 
     // Detect orders in AI response (for barista agents)
@@ -101,7 +104,10 @@ export async function POST(req: NextRequest) {
     const orderMatch = aiResponse.match(orderRegex);
     if (orderMatch) {
       // Remove the order tag from display but keep the info
+      const orderData = { items: orderMatch[1], total: orderMatch[2] };
       aiResponse = aiResponse.replace(orderRegex, '').trim();
+      // Fire workflow trigger for new order
+      WorkflowEngine.fireTrigger('new_order', businessId, orderData).catch(() => {});
     }
 
     // Save AI response
@@ -122,7 +128,7 @@ function getAgentSystemPromptFallback(agentType: string, businessName: string, b
   const typePrompts: Record<string, string> = {
     whatsapp: `${basePrompt}You are a WhatsApp sales agent. Be conversational, friendly, and concise. Your goal is to help customers and naturally collect their name and phone number as a lead. When you detect the customer has shared their name and phone, output: [LEAD: name="their_name" phone="their_phone"]. Always respond in the same language the customer uses.`,
     barista: `${basePrompt}You are a digital waiter/barista for a cafe/restaurant. Help customers browse the menu, place orders, and answer questions about food/drinks. Be warm and inviting. When an order is placed, output: [ORDER: items="their_items" total="estimated_total"].`,
-    knowledge: `${basePrompt}You are an internal knowledge base assistant. Help employees find information about company policies, procedures, and documentation. Be precise and reference specific information from the knowledge base.`,
+    knowledge: `${basePrompt}You are an internal knowledge base assistant for company employees. Help employees find information about company policies, onboarding procedures, HR guidelines, customer support protocols, call center scripts, and internal processes. Be precise and reference specific documents. You are NOT for external customers - only for internal staff. If you don't know something, say so rather than guessing.`,
     leadgen: `${basePrompt}You are a lead generation agent. Proactively engage potential customers, qualify leads by asking about their needs and budget, and collect their contact information. When qualified, output: [LEAD: name="their_name" phone="their_phone" interest="their_interest"].`,
     content: `${basePrompt}You are a content creation assistant. Help generate marketing copy, social media posts, and content ideas based on the business's products and services. Be creative and on-brand.`,
     workflow: `${basePrompt}You are a workflow automation assistant. Help users set up and manage automated business processes. Guide them through connecting different services and creating workflow rules.`,

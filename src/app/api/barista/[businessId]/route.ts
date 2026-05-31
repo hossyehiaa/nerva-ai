@@ -1,46 +1,66 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
+import { WorkflowEngine } from '@/lib/workflow-engine';
 
 // GET - Public: Get business info for the barista chatbot
 export async function GET(
   _req: NextRequest,
   { params }: { params: Promise<{ businessId: string }> }
 ) {
-  const { businessId } = await params;
+  try {
+    const { businessId } = await params;
 
-  const business = await db.business.findUnique({
-    where: { id: businessId },
-    include: {
-      agents: {
-        where: { status: 'active' },
+    const business = await db.business.findUnique({
+      where: { id: businessId },
+      include: {
+        agents: {
+          where: { status: 'active' },
+        },
       },
-    },
-  });
+    });
 
-  if (!business) {
-    return NextResponse.json({ error: 'Business not found' }, { status: 404 });
-  }
-
-  // Try to find a barista agent first, then fall back to any agent
-  const baristaAgent = business.agents.find(a => a.type === 'barista') || business.agents[0];
-
-  // Extract menu items from the agent config if available
-  let menuItems: unknown[] = [];
-  if (baristaAgent) {
-    try {
-      const config = JSON.parse(baristaAgent.config);
-      menuItems = config.menu || [];
-    } catch {
-      // Config is not valid JSON, skip menu
+    if (!business) {
+      return NextResponse.json({ error: 'Business not found' }, { status: 404 });
     }
-  }
 
-  return NextResponse.json({
-    name: business.name,
-    industry: business.industry,
-    contextData: business.contextData,
-    menuItems,
-  });
+    // Try to find a barista agent first, then fall back to any agent
+    const baristaAgent = business.agents.find(a => a.type === 'barista') || business.agents[0];
+
+    // Extract menu items from the agent config if available
+    let menuItems: { name: string; price: string; description?: string; category?: string }[] = [];
+    if (baristaAgent) {
+      try {
+        const config = JSON.parse(baristaAgent.config);
+        if (config.menu && Array.isArray(config.menu)) {
+          menuItems = config.menu.map((item: string) => {
+            // Parse menu items like "Espresso - 35 EGP" or "Latte: 45 EGP - Hot coffee"
+            const parts = item.split(/\s*[-:]\s*/);
+            if (parts.length >= 2) {
+              return {
+                name: parts[0].trim(),
+                price: parts[1].trim(),
+                description: parts.length > 2 ? parts.slice(2).join(' - ').trim() : undefined,
+              };
+            }
+            return { name: item.trim(), price: '' };
+          });
+        }
+      } catch {
+        // Config is not valid JSON, skip menu
+      }
+    }
+
+    return NextResponse.json({
+      name: business.name,
+      industry: business.industry,
+      contextData: business.contextData,
+      menuItems,
+      hasMenu: menuItems.length > 0,
+    });
+  } catch (error) {
+    console.error('Barista GET error:', error);
+    return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
+  }
 }
 
 // POST - Public: Send a message to the barista chatbot
@@ -72,15 +92,28 @@ export async function POST(
     // Try to find a barista agent first, then fall back to any agent
     const baristaAgent = business.agents.find(a => a.type === 'barista') || business.agents[0];
 
+    // Extract menu items for context
+    let menuContext = '';
+    if (baristaAgent) {
+      try {
+        const config = JSON.parse(baristaAgent.config);
+        if (config.menu && Array.isArray(config.menu) && config.menu.length > 0) {
+          menuContext = `\n\nAvailable Menu Items:\n${(config.menu as string[]).map((item, i) => `${i + 1}. ${item}`).join('\n')}`;
+        }
+      } catch {
+        // skip
+      }
+    }
+
     // Determine the system prompt - use agent's prompt or business prompt or fallback
     let systemPrompt: string;
     if (baristaAgent?.systemPrompt) {
-      systemPrompt = baristaAgent.systemPrompt;
+      systemPrompt = baristaAgent.systemPrompt + menuContext;
     } else if (business.systemPrompt) {
-      systemPrompt = business.systemPrompt;
+      systemPrompt = business.systemPrompt + menuContext;
     } else {
       // Fallback barista prompt
-      systemPrompt = `You are a digital waiter/barista for "${business.name}", a business in the ${business.industry} industry.\n\nBusiness Knowledge:\n${business.contextData}\n\nHelp customers browse the menu, place orders, and answer questions about food/drinks. Be warm and inviting. When an order is placed, output: [ORDER: items="their_items" total="estimated_total"]. Always respond in the same language the customer uses.`;
+      systemPrompt = `You are a digital waiter/barista for "${business.name}", a business in the ${business.industry} industry.\n\nBusiness Knowledge:\n${business.contextData}${menuContext}\n\nHelp customers browse the menu, place orders, and answer questions about food/drinks. Be warm and inviting. When an order is placed, output: [ORDER: items="their_items" total="estimated_total"]. Always respond in the same language the customer uses.`;
     }
 
     // Save user message as conversation
@@ -140,9 +173,13 @@ export async function POST(
     // Detect orders in AI response (for barista agents)
     const orderRegex = /\[ORDER:\s*items="([^"]*?)"\s*total="([^"]*?)"\]/;
     const orderMatch = aiResponse.match(orderRegex);
+    let orderInfo: { items: string; total: string } | null = null;
     if (orderMatch) {
+      orderInfo = { items: orderMatch[1], total: orderMatch[2] };
       // Remove the order tag from display
       aiResponse = aiResponse.replace(orderRegex, '').trim();
+      // Fire workflow trigger for new order
+      WorkflowEngine.fireTrigger('new_order', businessId, { items: orderInfo.items, total: orderInfo.total }).catch(() => {});
     }
 
     // Detect leads in AI response
@@ -151,7 +188,7 @@ export async function POST(
     if (leadMatch) {
       const leadName = leadMatch[1];
       const leadPhone = leadMatch[2];
-      await db.lead.create({
+      const newLead = await db.lead.create({
         data: {
           businessId,
           customerName: leadName,
@@ -161,6 +198,8 @@ export async function POST(
         },
       });
       aiResponse = aiResponse.replace(leadRegex, '').trim();
+      // Fire workflow trigger for new lead
+      WorkflowEngine.fireTrigger('new_lead', businessId, { leadId: newLead.id, name: leadName, phone: leadPhone }).catch(() => {});
     }
 
     // Save AI response
@@ -173,7 +212,7 @@ export async function POST(
       },
     });
 
-    return NextResponse.json({ response: aiResponse, sessionId });
+    return NextResponse.json({ response: aiResponse, sessionId, order: orderInfo });
   } catch (error) {
     console.error('Barista chat error:', error);
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 });

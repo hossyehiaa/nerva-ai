@@ -1,13 +1,21 @@
 'use client';
 
 import React, { useState, useEffect, useRef } from 'react';
-import { Send, Coffee, Loader2, AlertCircle, ArrowUp } from 'lucide-react';
+import { Send, Coffee, Loader2, AlertCircle, ArrowUp, Menu, X } from 'lucide-react';
+
+interface MenuItem {
+  name: string;
+  price: string;
+  description?: string;
+  category?: string;
+}
 
 interface BusinessInfo {
   name: string;
   industry: string;
   contextData: string;
-  menuItems: unknown[];
+  menuItems: MenuItem[];
+  hasMenu: boolean;
 }
 
 interface ChatMessage {
@@ -15,6 +23,7 @@ interface ChatMessage {
   role: 'user' | 'assistant';
   content: string;
   timestamp: Date;
+  order?: { items: string; total: string } | null;
 }
 
 export default function BaristaPage({
@@ -31,6 +40,7 @@ export default function BaristaPage({
   const [input, setInput] = useState('');
   const [sending, setSending] = useState(false);
   const [sessionId, setSessionId] = useState('');
+  const [showMenu, setShowMenu] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
@@ -47,10 +57,6 @@ export default function BaristaPage({
     const fetchBusiness = async () => {
       try {
         const res = await fetch(`/api/barista/${businessId}`);
-        if (res.status === 404) {
-          setNotFound(true);
-          return;
-        }
         if (!res.ok) {
           setNotFound(true);
           return;
@@ -58,12 +64,13 @@ export default function BaristaPage({
         const data = await res.json();
         setBusiness(data);
 
-        // Add welcome message
+        // Build welcome message with menu hint
+        const menuHint = data.hasMenu ? ' You can ask me about our menu items and prices!' : '';
         setMessages([
           {
             id: 'welcome',
             role: 'assistant',
-            content: `Welcome to ${data.name}! I'm your digital assistant. How can I help you today? You can ask about our products, prices, or place an order!`,
+            content: `Welcome to ${data.name}! I'm your digital assistant. How can I help you today?${menuHint}`,
             timestamp: new Date(),
           },
         ]);
@@ -86,8 +93,8 @@ export default function BaristaPage({
     }
   }, [messages, sending]);
 
-  const sendMessage = async () => {
-    const trimmed = input.trim();
+  const sendMessage = async (overrideMessage?: string) => {
+    const trimmed = overrideMessage || input.trim();
     if (!trimmed || sending) return;
 
     const userMsg: ChatMessage = {
@@ -115,6 +122,7 @@ export default function BaristaPage({
           role: 'assistant',
           content: data.response || "I'm having trouble right now. Please try again!",
           timestamp: new Date(),
+          order: data.order || null,
         };
         setMessages((prev) => [...prev, botMsg]);
       } else {
@@ -182,14 +190,6 @@ export default function BaristaPage({
   }
 
   // ============ CHAT INTERFACE ============
-  const industryEmoji = business.industry?.toLowerCase().includes('cafe') || business.industry?.toLowerCase().includes('coffee')
-    ? '\u2615'
-    : business.industry?.toLowerCase().includes('restaurant')
-      ? '\u{1F37D}\uFE0F'
-      : business.industry?.toLowerCase().includes('bakery')
-        ? '\u{1F35E}'
-        : '\u{1F4CA}';
-
   return (
     <div className="min-h-screen bg-gradient-to-br from-[#030712] via-[#0a0f1e] to-[#030712] flex flex-col">
       {/* ===== TOP BAR ===== */}
@@ -207,15 +207,60 @@ export default function BaristaPage({
             <div className="flex items-center gap-1.5 mt-0.5">
               <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
               <span className="text-xs text-emerald-400 font-medium">Online</span>
-              <span className="text-xs text-muted-foreground/50 ml-1">{industryEmoji} {business.industry}</span>
+              <span className="text-xs text-muted-foreground/50 ml-1">{business.industry}</span>
             </div>
           </div>
+          {/* Menu toggle button */}
+          {business.hasMenu && (
+            <button
+              onClick={() => setShowMenu(!showMenu)}
+              className={`p-2 rounded-xl transition-colors ${showMenu ? 'bg-amber-500/20 text-amber-400' : 'text-muted-foreground hover:text-foreground hover:bg-muted/20'}`}
+            >
+              <Menu className="w-5 h-5" />
+            </button>
+          )}
           {/* Nerva branding */}
           <div className="text-[10px] text-muted-foreground/40 flex-shrink-0">
             Powered by Nerva AI
           </div>
         </div>
       </header>
+
+      {/* ===== MENU PANEL (collapsible) ===== */}
+      {showMenu && business.hasMenu && (
+        <div className="flex-shrink-0 border-b border-nerva-border/30 bg-[#020509]/90 backdrop-blur-xl">
+          <div className="px-4 py-3">
+            <div className="flex items-center justify-between mb-2">
+              <h3 className="text-sm font-semibold text-amber-400">Menu</h3>
+              <button onClick={() => setShowMenu(false)} className="p-1 text-muted-foreground hover:text-foreground">
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+            <div className="grid grid-cols-1 gap-1.5 max-h-60 overflow-y-auto">
+              {business.menuItems.map((item, i) => (
+                <button
+                  key={i}
+                  onClick={() => {
+                    sendMessage(`I'd like to order: ${item.name}`);
+                    setShowMenu(false);
+                  }}
+                  className="flex items-center justify-between p-2.5 rounded-xl bg-white/[0.03] border border-white/[0.06] hover:border-amber-500/30 hover:bg-amber-500/5 transition-all text-left"
+                >
+                  <div className="min-w-0 flex-1">
+                    <div className="text-sm font-medium text-foreground">{item.name}</div>
+                    {item.description && (
+                      <div className="text-xs text-muted-foreground/60 mt-0.5">{item.description}</div>
+                    )}
+                  </div>
+                  {item.price && (
+                    <span className="text-xs font-semibold text-amber-400 ml-2 flex-shrink-0">{item.price}</span>
+                  )}
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* ===== CHAT MESSAGES ===== */}
       <main
@@ -229,7 +274,10 @@ export default function BaristaPage({
         {/* Welcome hint cards */}
         {messages.length <= 1 && (
           <div className="flex flex-wrap gap-2 mb-4 justify-center">
-            {['Show me your products', 'What are your prices?', 'I\'d like to place an order'].map((hint) => (
+            {business.hasMenu
+              ? ['Show me the menu', 'What are your prices?', 'I\'d like to place an order']
+              : ['Hello!', 'Tell me about your business', 'How can you help me?']
+            .map((hint) => (
               <button
                 key={hint}
                 onClick={() => {
@@ -265,6 +313,14 @@ export default function BaristaPage({
               }`}
             >
               {msg.content}
+              {/* Order confirmation badge */}
+              {msg.order && (
+                <div className="mt-2 p-2 rounded-lg bg-amber-500/10 border border-amber-500/20">
+                  <div className="text-xs font-semibold text-amber-400 mb-0.5">Order Placed</div>
+                  <div className="text-xs text-muted-foreground">Items: {msg.order.items}</div>
+                  <div className="text-xs font-semibold text-foreground">Total: {msg.order.total}</div>
+                </div>
+              )}
             </div>
           </div>
         ))}
@@ -310,7 +366,7 @@ export default function BaristaPage({
               className="w-full bg-white/[0.06] border border-white/[0.08] rounded-2xl px-4 py-3 pr-12 text-sm text-foreground placeholder:text-muted-foreground/50 focus:outline-none focus:border-nerva-cyan/40 focus:ring-1 focus:ring-nerva-cyan/20 transition-all disabled:opacity-50"
             />
             <button
-              onClick={sendMessage}
+              onClick={() => sendMessage()}
               disabled={!input.trim() || sending}
               className={`absolute right-2 top-1/2 -translate-y-1/2 w-8 h-8 rounded-xl flex items-center justify-center transition-all ${
                 input.trim() && !sending
