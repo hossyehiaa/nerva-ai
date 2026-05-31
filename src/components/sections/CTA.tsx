@@ -6,12 +6,20 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { useState } from 'react';
 
-export default function CTA() {
+interface CTAProps {
+  onGetStarted?: () => void;
+}
+
+export default function CTA({ onGetStarted }: CTAProps) {
   const [email, setEmail] = useState('');
   const [submitted, setSubmitted] = useState(false);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
+    if (onGetStarted) {
+      onGetStarted();
+      return;
+    }
     if (email) {
       setSubmitted(true);
       setEmail('');

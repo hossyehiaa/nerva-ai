@@ -1,0 +1,159 @@
+'use client';
+
+import { useState } from 'react';
+import { useAuth } from '@/lib/auth';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Zap, Mail, Lock, User, ArrowLeft, Loader2 } from 'lucide-react';
+
+interface LoginPageProps {
+  onBack: () => void;
+}
+
+export default function LoginPage({ onBack }: LoginPageProps) {
+  const { login, register } = useAuth();
+  const [isRegister, setIsRegister] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [name, setName] = useState('');
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setError('');
+    setLoading(true);
+
+    try {
+      const result = isRegister
+        ? await register(email, password, name)
+        : await login(email, password);
+
+      if (!result.success) {
+        setError(result.error || 'Something went wrong');
+      }
+    } catch {
+      setError('An unexpected error occurred');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div className="min-h-screen bg-nerva-dark flex items-center justify-center px-4 relative">
+      {/* Background effects */}
+      <div className="absolute inset-0 grid-bg opacity-30" />
+      <div className="absolute top-1/4 left-1/4 w-72 h-72 bg-nerva-cyan/5 rounded-full blur-3xl" />
+      <div className="absolute bottom-1/4 right-1/4 w-96 h-96 bg-nerva-blue/5 rounded-full blur-3xl" />
+
+      <div className="relative z-10 w-full max-w-md">
+        {/* Back button */}
+        <button
+          onClick={onBack}
+          className="flex items-center gap-2 text-sm text-muted-foreground hover:text-nerva-cyan transition-colors mb-8"
+        >
+          <ArrowLeft className="w-4 h-4" />
+          Back to home
+        </button>
+
+        {/* Card */}
+        <div className="glass-card rounded-2xl p-8 glow-cyan">
+          {/* Logo */}
+          <div className="flex items-center justify-center gap-2.5 mb-6">
+            <div className="w-10 h-10 rounded-lg bg-gradient-to-br from-nerva-cyan to-nerva-blue flex items-center justify-center glow-cyan">
+              <Zap className="w-5 h-5 text-nerva-dark" />
+            </div>
+            <span className="text-xl font-bold">
+              <span className="gradient-text-cyan">Nerva</span>
+              <span className="text-foreground ml-1">AI</span>
+            </span>
+          </div>
+
+          <h2 className="text-2xl font-bold text-center mb-2">
+            {isRegister ? 'Create your account' : 'Welcome back'}
+          </h2>
+          <p className="text-sm text-muted-foreground text-center mb-6">
+            {isRegister
+              ? 'Start building your AI workforce today'
+              : 'Sign in to your Nerva AI dashboard'}
+          </p>
+
+          {/* Error */}
+          {error && (
+            <div className="mb-4 p-3 rounded-lg bg-red-500/10 border border-red-500/20 text-red-400 text-sm">
+              {error}
+            </div>
+          )}
+
+          {/* Form */}
+          <form onSubmit={handleSubmit} className="space-y-4">
+            {isRegister && (
+              <div className="relative">
+                <User className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+                <Input
+                  type="text"
+                  placeholder="Full name"
+                  value={name}
+                  onChange={(e) => setName(e.target.value)}
+                  className="pl-10 bg-muted/50 border-nerva-border focus:border-nerva-cyan/50 h-12 rounded-xl"
+                  required={isRegister}
+                />
+              </div>
+            )}
+            <div className="relative">
+              <Mail className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+              <Input
+                type="email"
+                placeholder="Email address"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                className="pl-10 bg-muted/50 border-nerva-border focus:border-nerva-cyan/50 h-12 rounded-xl"
+                required
+              />
+            </div>
+            <div className="relative">
+              <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+              <Input
+                type="password"
+                placeholder="Password"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                className="pl-10 bg-muted/50 border-nerva-border focus:border-nerva-cyan/50 h-12 rounded-xl"
+                required
+                minLength={6}
+              />
+            </div>
+
+            <Button
+              type="submit"
+              disabled={loading}
+              className="w-full shine-effect bg-gradient-to-r from-nerva-cyan to-nerva-blue text-nerva-dark font-semibold h-12 rounded-xl"
+            >
+              {loading ? (
+                <Loader2 className="w-5 h-5 animate-spin" />
+              ) : isRegister ? (
+                'Create Account'
+              ) : (
+                'Sign In'
+              )}
+            </Button>
+          </form>
+
+          {/* Toggle */}
+          <div className="mt-6 text-center text-sm text-muted-foreground">
+            {isRegister ? 'Already have an account?' : "Don't have an account?"}{' '}
+            <button
+              onClick={() => {
+                setIsRegister(!isRegister);
+                setError('');
+              }}
+              className="text-nerva-cyan hover:underline font-medium"
+            >
+              {isRegister ? 'Sign in' : 'Sign up'}
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}

@@ -1,5 +1,6 @@
 'use client';
 
+import { AuthProvider, useAuth } from '@/lib/auth';
 import Navbar from '@/components/sections/Navbar';
 import Hero from '@/components/sections/Hero';
 import WhyNerva from '@/components/sections/WhyNerva';
@@ -9,21 +10,64 @@ import Pricing from '@/components/sections/Pricing';
 import FAQ from '@/components/sections/FAQ';
 import CTA from '@/components/sections/CTA';
 import Footer from '@/components/sections/Footer';
+import LoginPage from '@/components/app/LoginPage';
+import DashboardPage from '@/components/app/DashboardPage';
+import OnboardingPage from '@/components/app/OnboardingPage';
+import { useState } from 'react';
 
-export default function Home() {
+function AppRouter() {
+  const { user, loading } = useAuth();
+  const [page, setPage] = useState<'home' | 'login' | 'dashboard' | 'onboarding'>('home');
+
+  if (loading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-nerva-dark">
+        <div className="flex flex-col items-center gap-4">
+          <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-nerva-cyan to-nerva-blue flex items-center justify-center animate-pulse">
+            <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-6 h-6 text-nerva-dark">
+              <path d="M4 14a1 1 0 0 1-.78-1.63l9.9-10.2a.5.5 0 0 1 .86.46l-1.92 6.02A1 1 0 0 0 13 10h7a1 1 0 0 1 .78 1.63l-9.9 10.2a.5.5 0 0 1-.86-.46l1.92-6.02A1 1 0 0 0 11 14z" />
+            </svg>
+          </div>
+          <span className="text-sm text-muted-foreground">Loading Nerva AI...</span>
+        </div>
+      </div>
+    );
+  }
+
+  // Logged in pages
+  if (user) {
+    if (page === 'onboarding') {
+      return <OnboardingPage onComplete={() => setPage('dashboard')} />;
+    }
+    return <DashboardPage onNavigate={setPage} />;
+  }
+
+  // Public pages
+  if (page === 'login') {
+    return <LoginPage onBack={() => setPage('home')} />;
+  }
+
   return (
     <div className="min-h-screen flex flex-col bg-nerva-dark">
-      <Navbar />
+      <Navbar onLogin={() => setPage('login')} onDashboard={() => setPage('login')} />
       <main className="flex-1">
-        <Hero />
+        <Hero onGetStarted={() => setPage('login')} />
         <WhyNerva />
         <Services />
         <HowItWorks />
         <Pricing />
         <FAQ />
-        <CTA />
+        <CTA onGetStarted={() => setPage('login')} />
       </main>
       <Footer />
     </div>
+  );
+}
+
+export default function Home() {
+  return (
+    <AuthProvider>
+      <AppRouter />
+    </AuthProvider>
   );
 }

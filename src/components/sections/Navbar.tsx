@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Menu, X, Zap } from 'lucide-react';
+import { Menu, X, Zap, LayoutDashboard, LogIn } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 
 const navLinks = [
@@ -13,7 +13,12 @@ const navLinks = [
   { href: '#contact', label: 'Contact' },
 ];
 
-export default function Navbar() {
+interface NavbarProps {
+  onLogin?: () => void;
+  onDashboard?: () => void;
+}
+
+export default function Navbar({ onLogin, onDashboard }: NavbarProps) {
   const [isScrolled, setIsScrolled] = useState(false);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
 
@@ -64,17 +69,21 @@ export default function Navbar() {
 
           {/* Desktop CTA */}
           <div className="hidden md:flex items-center gap-3">
-            <a
-              href="#contact"
-              className="text-sm text-muted-foreground hover:text-foreground transition-colors"
-            >
-              Log In
-            </a>
             <Button
-              asChild
-              className="shine-effect bg-gradient-to-r from-nerva-cyan to-nerva-blue text-nerva-dark font-semibold hover:opacity-90 transition-opacity rounded-lg px-5"
+              variant="ghost"
+              size="sm"
+              onClick={onLogin}
+              className="text-sm text-muted-foreground hover:text-foreground flex items-center gap-1.5"
             >
-              <a href="#contact">Get Started</a>
+              <LogIn className="w-4 h-4" />
+              Log In
+            </Button>
+            <Button
+              onClick={onDashboard}
+              className="shine-effect bg-gradient-to-r from-nerva-cyan to-nerva-blue text-nerva-dark font-semibold hover:opacity-90 transition-opacity rounded-lg px-5 flex items-center gap-1.5"
+            >
+              <LayoutDashboard className="w-4 h-4" />
+              Dashboard
             </Button>
           </div>
 
@@ -111,19 +120,20 @@ export default function Navbar() {
                 </a>
               ))}
               <div className="pt-3 border-t border-nerva-border space-y-2">
-                <a
-                  href="#contact"
-                  className="block px-4 py-3 text-muted-foreground hover:text-foreground transition-colors"
-                >
-                  Log In
-                </a>
                 <Button
-                  asChild
-                  className="w-full shine-effect bg-gradient-to-r from-nerva-cyan to-nerva-blue text-nerva-dark font-semibold rounded-lg"
+                  variant="ghost"
+                  className="w-full justify-start text-muted-foreground"
+                  onClick={() => { onLogin?.(); setIsMobileMenuOpen(false); }}
                 >
-                  <a href="#contact" onClick={() => setIsMobileMenuOpen(false)}>
-                    Get Started
-                  </a>
+                  <LogIn className="w-4 h-4 mr-2" />
+                  Log In
+                </Button>
+                <Button
+                  className="w-full shine-effect bg-gradient-to-r from-nerva-cyan to-nerva-blue text-nerva-dark font-semibold rounded-lg"
+                  onClick={() => { onDashboard?.(); setIsMobileMenuOpen(false); }}
+                >
+                  <LayoutDashboard className="w-4 h-4 mr-2" />
+                  Dashboard
                 </Button>
               </div>
             </div>

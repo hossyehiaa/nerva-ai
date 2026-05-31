@@ -5,7 +5,11 @@ import { ArrowRight, Play, Sparkles, Zap, Clock, Users } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import Image from 'next/image';
 
-export default function Hero() {
+interface HeroProps {
+  onGetStarted?: () => void;
+}
+
+export default function Hero({ onGetStarted }: HeroProps) {
   return (
     <section className="relative min-h-screen flex items-center justify-center overflow-hidden pt-20">
       {/* Background layers */}
@@ -75,14 +79,12 @@ export default function Hero() {
           className="flex flex-col sm:flex-row items-center justify-center gap-4 mb-16"
         >
           <Button
-            asChild
             size="lg"
+            onClick={onGetStarted}
             className="shine-effect bg-gradient-to-r from-nerva-cyan to-nerva-blue text-nerva-dark font-semibold text-base px-8 py-6 rounded-xl glow-cyan hover:glow-cyan-strong transition-all duration-300"
           >
-            <a href="#contact">
               Start Automating
               <ArrowRight className="w-5 h-5 ml-2" />
-            </a>
           </Button>
           <Button
             asChild
