@@ -17,6 +17,7 @@ model User {
   updatedAt     DateTime   @updatedAt
   businesses    Business[]
   subscriptions Subscription[]
+  payments      Payment[]
 }
 
 model Business {
@@ -30,12 +31,16 @@ model Business {
   subscriptionStatus String       @default("free") // free | starter | pro | agency
   agentLimit        Int           @default(1)
   leadLimit         Int           @default(10)
+  whatsappNumber    String?       // Connected WhatsApp number
+  whatsappInstance  String?       // Evolution API instance name
   createdAt         DateTime      @default(now())
   updatedAt         DateTime      @updatedAt
   user              User          @relation(fields: [userId], references: [id], onDelete: Cascade)
   leads             Lead[]
   agents            Agent[]
   conversations     Conversation[]
+  workflows         Workflow[]
+  knowledgeDocs     KnowledgeDoc[]
 
   @@index([userId])
 }
@@ -48,6 +53,7 @@ model Agent {
   status       String   @default("active") // active | paused | draft
   config       String   @default("{}") // JSON config for the agent
   systemPrompt String   @default("") // Agent-specific system prompt override
+  qrCodeUrl    String?  // For barista agents - URL to the public chat page
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
   business     Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
@@ -61,7 +67,8 @@ model Lead {
   customerName    String?
   customerContact String?
   intent          String?
-  source          String    @default("ai_chat") // ai_chat | barista | manual
+  source          String    @default("ai_chat") // ai_chat | barista | manual | leadgen | whatsapp
+  status          String    @default("new") // new | contacted | qualified | converted | lost
   createdAt       DateTime  @default(now())
   business        Business  @relation(fields: [businessId], references: [id], onDelete: Cascade)
 
@@ -93,4 +100,53 @@ model Subscription {
   user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId])
+}
+
+model Payment {
+  id            String   @id @default(cuid())
+  userId        String
+  businessId    String?
+  amount        Float
+  currency      String   @default("EGP")
+  plan          String   // starter | pro | agency
+  method        String   @default("instapay") // instapay
+  screenshotUrl String?  // Uploaded screenshot of payment
+  status        String   @default("pending") // pending | approved | rejected
+  adminNote     String?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+  user          User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([status])
+}
+
+model Workflow {
+  id          String   @id @default(cuid())
+  businessId  String
+  name        String
+  description String   @default("")
+  trigger     String   // new_lead | new_order | schedule | manual | webhook
+  triggerConfig String @default("{}") // JSON config for trigger
+  actions     String   @default("[]") // JSON array of actions
+  status      String   @default("draft") // draft | active | paused
+  lastRunAt   DateTime?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  business    Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
+
+  @@index([businessId])
+}
+
+model KnowledgeDoc {
+  id          String   @id @default(cuid())
+  businessId  String
+  title       String
+  content     String
+  category    String   @default("general") // general | policy | onboarding | procedures | faq
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  business    Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
+
+  @@index([businessId])
 }

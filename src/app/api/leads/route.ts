@@ -42,6 +42,41 @@ export async function GET(req: NextRequest) {
   return NextResponse.json(leads);
 }
 
+// PUT - Update lead status
+export async function PUT(req: NextRequest) {
+  const user = await getUser(req);
+  if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+
+  const { id, status } = await req.json();
+
+  if (!id || !status) {
+    return NextResponse.json({ error: 'id and status are required' }, { status: 400 });
+  }
+
+  const validStatuses = ['new', 'contacted', 'qualified', 'converted', 'lost'];
+  if (!validStatuses.includes(status)) {
+    return NextResponse.json(
+      { error: 'Invalid status. Choose: new, contacted, qualified, converted, lost' },
+      { status: 400 }
+    );
+  }
+
+  const lead = await db.lead.findUnique({ where: { id } });
+  if (!lead) return NextResponse.json({ error: 'Not found' }, { status: 404 });
+
+  const business = await db.business.findUnique({ where: { id: lead.businessId } });
+  if (!business || business.userId !== user.id) {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  }
+
+  const updated = await db.lead.update({
+    where: { id },
+    data: { status },
+  });
+
+  return NextResponse.json(updated);
+}
+
 // DELETE - Delete a lead
 export async function DELETE(req: NextRequest) {
   const user = await getUser(req);
