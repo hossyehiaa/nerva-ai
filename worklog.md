@@ -1,24 +1,31 @@
+# Nerva AI Worklog
+
 ---
 Task ID: 1
 Agent: Main Agent
-Task: Build complete full-stack backend for Nerva AI with all service modules
+Task: Separate admin dashboard, fix barista, workflows engine, knowledge base
 
 Work Log:
-- Analyzed existing codebase: Next.js landing page, basic auth, chat API, agent CRUD
-- Updated Prisma schema: Added Payment, Workflow, KnowledgeDoc models
-- Pushed schema to Neon PostgreSQL database
-- Created 7 new API routes for payments, workflows, knowledge, barista
-- Rebuilt DashboardPage.tsx with 11 service pages
-- Created public barista chatbot page at /barista/[businessId]
-- Created admin payments page at /admin/payments
-- InstaPay payment flow: @hossyehia, screenshot upload, admin approval
-- Verified build compiles successfully
-- Pushed to GitHub and auto-deployed to Vercel
+- Removed Admin Panel from client dashboard (DashboardPage.tsx) - no more admin access for clients
+- Created /admin/login page with email/password authentication (verifies admin role)
+- Created full /admin dashboard with 4 tabs: Overview, Payments, Users, Businesses
+- Created /api/admin/payments, /api/admin/users, /api/admin/businesses endpoints
+- Added middleware.ts to protect /admin routes (redirects to /admin/login if not admin)
+- Seeded admin user: admin@nerva.ai / NervaAdmin2024!
+- Fixed Barista QR menu: enhanced menu display with clickable items, order confirmation badges
+- Created WorkflowEngine (src/lib/workflow-engine.ts) with real execution logic
+- Added auto-triggering: new_lead and new_order events fire matching workflows
+- Added /api/workflows/execute for manual workflow execution
+- Added "Run Now" button in WorkflowsPage
+- Fixed Knowledge Base: changed from sales prompt to proper employee-facing AI chatbot prompt
+- Enhanced Knowledge Base UI with suggested employee questions
+- Updated all knowledge base prompts across agents API and chat API
 
 Stage Summary:
-- Full-stack application is live at https://nerva-ai.vercel.app
-- All service modules implemented with full CRUD operations
-- InstaPay payment with screenshot upload and admin approval workflow
-- Public barista chatbot accessible via QR codes
-- Admin payment review page at /admin/payments
-- Database: Neon PostgreSQL with all models synced
+- Admin is now completely separate from client dashboard
+- Admin credentials: admin@nerva.ai / NervaAdmin2024!
+- Admin URL: nerva-ai.vercel.app/admin (auto-redirects to /admin/login if not authenticated)
+- Workflows now actually execute when triggers fire
+- Knowledge Base is now an employee-facing AI assistant
+- Barista page shows menu items and allows ordering
+- Deployed to Vercel via GitHub push
