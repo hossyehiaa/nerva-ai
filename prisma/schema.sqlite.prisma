@@ -1,0 +1,96 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id            String     @id @default(cuid())
+  email         String     @unique
+  name          String?
+  passwordHash  String
+  role          String     @default("user") // user | admin
+  createdAt     DateTime   @default(now())
+  updatedAt     DateTime   @updatedAt
+  businesses    Business[]
+  subscriptions Subscription[]
+}
+
+model Business {
+  id                String        @id @default(cuid())
+  userId            String
+  name              String
+  industry          String
+  contextData       String        @default("") // Knowledge base
+  systemPrompt      String        @default("") // Generated AI prompt
+  apiKey            String        @unique @default(cuid())
+  subscriptionStatus String       @default("free") // free | starter | pro | agency
+  agentLimit        Int           @default(1)
+  leadLimit         Int           @default(10)
+  createdAt         DateTime      @default(now())
+  updatedAt         DateTime      @updatedAt
+  user              User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  leads             Lead[]
+  agents            Agent[]
+  conversations     Conversation[]
+
+  @@index([userId])
+}
+
+model Agent {
+  id           String   @id @default(cuid())
+  businessId   String
+  name         String
+  type         String   // whatsapp | barista | knowledge | leadgen | content | voice | workflow
+  status       String   @default("active") // active | paused | draft
+  config       String   @default("{}") // JSON config for the agent
+  systemPrompt String   @default("") // Agent-specific system prompt override
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+  business     Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
+
+  @@index([businessId])
+}
+
+model Lead {
+  id              String    @id @default(cuid())
+  businessId      String
+  customerName    String?
+  customerContact String?
+  intent          String?
+  source          String    @default("ai_chat") // ai_chat | barista | manual
+  createdAt       DateTime  @default(now())
+  business        Business  @relation(fields: [businessId], references: [id], onDelete: Cascade)
+
+  @@index([businessId])
+}
+
+model Conversation {
+  id          String    @id @default(cuid())
+  businessId  String
+  agentId     String?   // Optional: for per-agent conversations
+  role        String    // user | assistant
+  content     String
+  createdAt   DateTime  @default(now())
+  business    Business  @relation(fields: [businessId], references: [id], onDelete: Cascade)
+
+  @@index([businessId])
+  @@index([agentId])
+}
+
+model Subscription {
+  id        String   @id @default(cuid())
+  userId    String
+  plan      String   @default("free") // free | starter | pro | agency
+  status    String   @default("active") // active | cancelled | expired
+  startDate DateTime @default(now())
+  endDate   DateTime?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
