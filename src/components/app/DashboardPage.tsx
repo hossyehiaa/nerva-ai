@@ -8,10 +8,12 @@ import {
   Zap, LogOut, Plus, MessageSquare, Users, Target,
   Send, Loader2, Trash2, Key, Bot, Settings, Coffee,
   Brain, Workflow, Film, Phone, ArrowLeft, ChevronDown,
-  Sparkles, Copy, CheckCircle2, BarChart3, Clock
+  Sparkles, Copy, CheckCircle2, BarChart3, Clock,
+  CreditCard, ShieldCheck, Home, Crown, X, AlertTriangle
 } from 'lucide-react';
+import { useToast } from '@/hooks/use-toast';
 
-type Page = 'overview' | 'chat' | 'leads' | 'agents' | 'settings';
+type Page = 'overview' | 'chat' | 'leads' | 'agents' | 'settings' | 'subscription';
 
 interface Business {
   id: string;
@@ -31,6 +33,7 @@ interface Agent {
   type: string;
   status: string;
   config: string;
+  systemPrompt?: string;
   createdAt: string;
 }
 
@@ -58,15 +61,70 @@ const agentTypes = [
   { id: 'voice', label: 'AI Voice Caller', icon: Phone, color: 'text-teal-400', bg: 'bg-teal-500/10', desc: 'Human-like phone calls' },
 ];
 
+const subscriptionPlans = [
+  {
+    id: 'free',
+    name: 'Free',
+    price: '0',
+    currency: 'EGP',
+    period: '/mo',
+    agents: 1,
+    leads: 10,
+    features: ['1 AI Agent', '10 leads/month', 'Basic chat', 'Community support'],
+    highlight: false,
+    current: true,
+  },
+  {
+    id: 'starter',
+    name: 'Starter',
+    price: '1,500',
+    currency: 'EGP',
+    period: '/mo',
+    agents: 3,
+    leads: 100,
+    features: ['3 AI Agents', '100 leads/month', 'WhatsApp + Knowledge agents', 'Email support', 'Custom knowledge base'],
+    highlight: false,
+    current: false,
+  },
+  {
+    id: 'pro',
+    name: 'Pro',
+    price: '3,500',
+    currency: 'EGP',
+    period: '/mo',
+    agents: 7,
+    leads: 500,
+    features: ['7 AI Agents', '500 leads/month', 'All agent types', 'Priority support', 'Advanced analytics', 'API access'],
+    highlight: true,
+    current: false,
+  },
+  {
+    id: 'agency',
+    name: 'Agency',
+    price: '10,000',
+    currency: 'EGP',
+    period: '/mo',
+    agents: 999,
+    leads: 99999,
+    features: ['Unlimited agents', 'Unlimited leads', 'Custom integrations', 'Dedicated support', 'White-label option', 'SLA guarantee', 'Custom training'],
+    highlight: false,
+    current: false,
+  },
+];
+
+const agentLimits: Record<string, number> = { free: 1, starter: 3, pro: 7, agency: 999 };
+
 interface DashboardPageProps {
   onNavigate: (page: string) => void;
 }
 
 export default function DashboardPage({ onNavigate }: DashboardPageProps) {
   const { user, logout, refreshUser } = useAuth();
+  const { toast } = useToast();
   const [business, setBusiness] = useState<Business | null>(null);
   const [page, setPage] = useState<Page>('overview');
   const [loading, setLoading] = useState(true);
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
   useEffect(() => {
     loadBusiness();
@@ -90,6 +148,10 @@ export default function DashboardPage({ onNavigate }: DashboardPageProps) {
 
   const handleLogout = async () => {
     await logout();
+    onNavigate('home');
+  };
+
+  const handleBackToHome = () => {
     onNavigate('home');
   };
 
@@ -127,6 +189,7 @@ export default function DashboardPage({ onNavigate }: DashboardPageProps) {
     { id: 'chat', label: 'AI Chat', icon: MessageSquare },
     { id: 'leads', label: 'Leads', icon: Users },
     { id: 'agents', label: 'Agents', icon: Bot },
+    { id: 'subscription', label: 'Subscription', icon: CreditCard },
     { id: 'settings', label: 'Settings', icon: Settings },
   ];
 
@@ -169,13 +232,24 @@ export default function DashboardPage({ onNavigate }: DashboardPageProps) {
             >
               <item.icon className="w-4 h-4" />
               {item.label}
+              {item.id === 'subscription' && business.subscriptionStatus === 'free' && (
+                <span className="ml-auto text-[10px] px-1.5 py-0.5 rounded-full bg-nerva-cyan/20 text-nerva-cyan">Upgrade</span>
+              )}
             </button>
           ))}
         </nav>
 
-        {/* User & Logout */}
-        <div className="p-4 border-t border-nerva-border">
-          <div className="flex items-center gap-3 mb-3">
+        {/* Back to Home + User & Logout */}
+        <div className="p-4 border-t border-nerva-border space-y-3">
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={handleBackToHome}
+            className="w-full text-muted-foreground hover:text-foreground"
+          >
+            <Home className="w-4 h-4 mr-2" /> Back to Home
+          </Button>
+          <div className="flex items-center gap-3">
             <div className="w-8 h-8 rounded-full bg-gradient-to-br from-nerva-cyan to-nerva-blue flex items-center justify-center text-nerva-dark text-xs font-bold">
               {user?.name?.[0] || user?.email[0].toUpperCase()}
             </div>
@@ -204,18 +278,48 @@ export default function DashboardPage({ onNavigate }: DashboardPageProps) {
             </div>
             <span className="font-bold text-sm gradient-text-cyan">Nerva AI</span>
           </div>
-          <div className="flex items-center gap-2">
-            {navItems.map((item) => (
-              <button
-                key={item.id}
-                onClick={() => setPage(item.id)}
-                className={`p-2 rounded-lg ${page === item.id ? 'bg-nerva-cyan/10 text-nerva-cyan' : 'text-muted-foreground'}`}
-              >
-                <item.icon className="w-4 h-4" />
-              </button>
-            ))}
-          </div>
+          <button
+            onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
+            className="p-2 text-muted-foreground hover:text-nerva-cyan"
+          >
+            {mobileMenuOpen ? <X className="w-5 h-5" /> : <ChevronDown className="w-5 h-5" />}
+          </button>
         </div>
+        {/* Mobile menu dropdown */}
+        {mobileMenuOpen && (
+          <div className="border-t border-nerva-border bg-[#020509]/95 backdrop-blur-xl">
+            <div className="p-2 space-y-0.5">
+              {navItems.map((item) => (
+                <button
+                  key={item.id}
+                  onClick={() => { setPage(item.id); setMobileMenuOpen(false); }}
+                  className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm transition-colors ${
+                    page === item.id
+                      ? 'bg-nerva-cyan/10 text-nerva-cyan'
+                      : 'text-muted-foreground hover:bg-muted/50 hover:text-foreground'
+                  }`}
+                >
+                  <item.icon className="w-4 h-4" />
+                  {item.label}
+                </button>
+              ))}
+              <div className="border-t border-nerva-border mt-2 pt-2 space-y-0.5">
+                <button
+                  onClick={() => { handleBackToHome(); setMobileMenuOpen(false); }}
+                  className="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm text-muted-foreground hover:bg-muted/50 hover:text-foreground"
+                >
+                  <Home className="w-4 h-4" /> Back to Home
+                </button>
+                <button
+                  onClick={() => { handleLogout(); setMobileMenuOpen(false); }}
+                  className="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm text-muted-foreground hover:bg-muted/50 hover:text-foreground"
+                >
+                  <LogOut className="w-4 h-4" /> Sign Out
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Main content */}
@@ -225,6 +329,7 @@ export default function DashboardPage({ onNavigate }: DashboardPageProps) {
           {page === 'chat' && <ChatPage business={business} />}
           {page === 'leads' && <LeadsPage business={business} />}
           {page === 'agents' && <AgentsPage business={business} refresh={loadBusiness} />}
+          {page === 'subscription' && <SubscriptionPage business={business} refresh={loadBusiness} />}
           {page === 'settings' && <SettingsPage business={business} refresh={loadBusiness} />}
         </div>
       </main>
@@ -285,7 +390,28 @@ function ChatPage({ business }: { business: Business }) {
   const [messages, setMessages] = useState<ChatMsg[]>([]);
   const [input, setInput] = useState('');
   const [sending, setSending] = useState(false);
+  const [agents, setAgents] = useState<Agent[]>([]);
+  const [selectedAgentId, setSelectedAgentId] = useState<string | null>(null);
+  const [agentsLoading, setAgentsLoading] = useState(true);
   const scrollRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const loadAgents = async () => {
+      try {
+        const res = await fetch('/api/agents?businessId=' + business.id);
+        if (res.ok) {
+          const data = await res.json();
+          setAgents(data);
+          if (data.length > 0 && !selectedAgentId) {
+            setSelectedAgentId(data[0].id);
+          }
+        }
+      } catch {} finally { setAgentsLoading(false); }
+    };
+    loadAgents();
+  }, [business.id]);
+
+  const selectedAgent = agents.find(a => a.id === selectedAgentId);
 
   const sendMessage = async () => {
     if (!input.trim() || sending) return;
@@ -298,7 +424,7 @@ function ChatPage({ business }: { business: Business }) {
       const res = await fetch('/api/chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ businessId: business.id, message: userMsg }),
+        body: JSON.stringify({ businessId: business.id, message: userMsg, agentId: selectedAgentId }),
       });
       const data = await res.json();
       if (res.ok) {
@@ -313,6 +439,11 @@ function ChatPage({ business }: { business: Business }) {
     }
   };
 
+  const handleSelectAgent = (agentId: string) => {
+    setSelectedAgentId(agentId);
+    setMessages([]);
+  };
+
   useEffect(() => {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: 'smooth' });
   }, [messages]);
@@ -320,76 +451,118 @@ function ChatPage({ business }: { business: Business }) {
   return (
     <div>
       <h1 className="text-2xl font-bold mb-1">AI Agent Chat</h1>
-      <p className="text-muted-foreground mb-6">Test your AI agent trained on {business.name}&apos;s knowledge base.</p>
+      <p className="text-muted-foreground mb-6">Test your AI agents trained on {business.name}&apos;s knowledge base.</p>
 
-      <div className="glass-card rounded-2xl overflow-hidden flex flex-col" style={{ height: 'calc(100vh - 200px)', minHeight: '400px' }}>
-        {/* Chat header */}
-        <div className="flex items-center gap-3 p-4 border-b border-nerva-border">
-          <div className="w-9 h-9 rounded-lg bg-gradient-to-br from-nerva-cyan to-nerva-blue flex items-center justify-center">
-            <Bot className="w-5 h-5 text-nerva-dark" />
+      <div className="flex flex-col lg:flex-row gap-4" style={{ height: 'calc(100vh - 200px)', minHeight: '400px' }}>
+        {/* Agent list sidebar */}
+        <div className="lg:w-56 glass-card rounded-2xl overflow-hidden flex-shrink-0">
+          <div className="p-3 border-b border-nerva-border">
+            <div className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Agents</div>
           </div>
-          <div>
-            <div className="text-sm font-medium">{business.name} Agent</div>
-            <div className="text-xs text-nerva-green flex items-center gap-1">
-              <span className="w-1.5 h-1.5 rounded-full bg-nerva-green" /> Online
-            </div>
+          <div className="p-2 space-y-1 max-h-96 lg:max-h-none overflow-y-auto">
+            {agentsLoading ? (
+              <div className="flex justify-center py-4"><Loader2 className="w-5 h-5 text-nerva-cyan animate-spin" /></div>
+            ) : agents.length === 0 ? (
+              <div className="p-3 text-xs text-muted-foreground text-center">No agents yet</div>
+            ) : (
+              agents.map((agent) => {
+                const typeInfo = agentTypes.find(t => t.id === agent.type) || agentTypes[0];
+                return (
+                  <button
+                    key={agent.id}
+                    onClick={() => handleSelectAgent(agent.id)}
+                    className={`w-full flex items-center gap-2.5 p-2.5 rounded-lg text-left transition-all text-sm ${
+                      selectedAgentId === agent.id
+                        ? 'bg-nerva-cyan/10 border border-nerva-cyan/30 text-foreground'
+                        : 'hover:bg-muted/30 border border-transparent text-muted-foreground'
+                    }`}
+                  >
+                    <div className={`w-7 h-7 rounded-lg ${typeInfo.bg} flex items-center justify-center flex-shrink-0`}>
+                      <typeInfo.icon className={`w-3.5 h-3.5 ${typeInfo.color}`} />
+                    </div>
+                    <div className="min-w-0">
+                      <div className="font-medium text-xs truncate">{agent.name}</div>
+                      <div className="text-[10px] text-muted-foreground capitalize">{agent.type}</div>
+                    </div>
+                  </button>
+                );
+              })
+            )}
           </div>
         </div>
 
-        {/* Messages */}
-        <div ref={scrollRef} className="flex-1 overflow-y-auto p-4 space-y-4">
-          {messages.length === 0 && (
-            <div className="text-center py-12">
-              <Bot className="w-12 h-12 text-nerva-cyan/30 mx-auto mb-3" />
-              <p className="text-muted-foreground text-sm">Start a conversation with your AI agent</p>
-              <p className="text-muted-foreground/50 text-xs mt-1">It&apos;s trained on your business knowledge base</p>
+        {/* Chat area */}
+        <div className="flex-1 glass-card rounded-2xl overflow-hidden flex flex-col min-h-0">
+          {/* Chat header */}
+          <div className="flex items-center gap-3 p-4 border-b border-nerva-border">
+            <div className="w-9 h-9 rounded-lg bg-gradient-to-br from-nerva-cyan to-nerva-blue flex items-center justify-center">
+              <Bot className="w-5 h-5 text-nerva-dark" />
             </div>
-          )}
-          {messages.map((msg, i) => (
-            <div key={i} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
-              <div className={`max-w-[80%] rounded-2xl px-4 py-2.5 text-sm ${
-                msg.role === 'user'
-                  ? 'bg-gradient-to-r from-nerva-cyan to-nerva-blue text-nerva-dark'
-                  : 'bg-muted/50 text-foreground'
-              }`}>
-                {msg.content}
+            <div>
+              <div className="text-sm font-medium">{selectedAgent?.name || business.name + ' Agent'}</div>
+              <div className="text-xs text-nerva-green flex items-center gap-1">
+                <span className="w-1.5 h-1.5 rounded-full bg-nerva-green" /> Online
               </div>
             </div>
-          ))}
-          {sending && (
-            <div className="flex justify-start">
-              <div className="bg-muted/50 rounded-2xl px-4 py-2.5 flex items-center gap-2">
-                <div className="flex gap-1">
-                  <span className="w-1.5 h-1.5 rounded-full bg-nerva-cyan animate-bounce" style={{ animationDelay: '0ms' }} />
-                  <span className="w-1.5 h-1.5 rounded-full bg-nerva-cyan animate-bounce" style={{ animationDelay: '150ms' }} />
-                  <span className="w-1.5 h-1.5 rounded-full bg-nerva-cyan animate-bounce" style={{ animationDelay: '300ms' }} />
+          </div>
+
+          {/* Messages */}
+          <div ref={scrollRef} className="flex-1 overflow-y-auto p-4 space-y-4">
+            {messages.length === 0 && (
+              <div className="text-center py-12">
+                <Bot className="w-12 h-12 text-nerva-cyan/30 mx-auto mb-3" />
+                <p className="text-muted-foreground text-sm">Start a conversation with your AI agent</p>
+                <p className="text-muted-foreground/50 text-xs mt-1">
+                  {selectedAgent ? `Chatting with ${selectedAgent.name}` : 'Select an agent from the list'}
+                </p>
+              </div>
+            )}
+            {messages.map((msg, i) => (
+              <div key={i} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
+                <div className={`max-w-[80%] rounded-2xl px-4 py-2.5 text-sm ${
+                  msg.role === 'user'
+                    ? 'bg-gradient-to-r from-nerva-cyan to-nerva-blue text-nerva-dark'
+                    : 'bg-muted/50 text-foreground'
+                }`}>
+                  {msg.content}
                 </div>
               </div>
-            </div>
-          )}
-        </div>
+            ))}
+            {sending && (
+              <div className="flex justify-start">
+                <div className="bg-muted/50 rounded-2xl px-4 py-2.5 flex items-center gap-2">
+                  <div className="flex gap-1">
+                    <span className="w-1.5 h-1.5 rounded-full bg-nerva-cyan animate-bounce" style={{ animationDelay: '0ms' }} />
+                    <span className="w-1.5 h-1.5 rounded-full bg-nerva-cyan animate-bounce" style={{ animationDelay: '150ms' }} />
+                    <span className="w-1.5 h-1.5 rounded-full bg-nerva-cyan animate-bounce" style={{ animationDelay: '300ms' }} />
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
 
-        {/* Input */}
-        <div className="p-4 border-t border-nerva-border">
-          <form
-            onSubmit={(e) => { e.preventDefault(); sendMessage(); }}
-            className="flex gap-2"
-          >
-            <Input
-              value={input}
-              onChange={(e) => setInput(e.target.value)}
-              placeholder="Type a message..."
-              className="flex-1 bg-muted/50 border-nerva-border focus:border-nerva-cyan/50 h-11 rounded-xl"
-              disabled={sending}
-            />
-            <Button
-              type="submit"
-              disabled={!input.trim() || sending}
-              className="bg-gradient-to-r from-nerva-cyan to-nerva-blue text-nerva-dark h-11 px-4 rounded-xl"
+          {/* Input */}
+          <div className="p-4 border-t border-nerva-border">
+            <form
+              onSubmit={(e) => { e.preventDefault(); sendMessage(); }}
+              className="flex gap-2"
             >
-              <Send className="w-4 h-4" />
-            </Button>
-          </form>
+              <Input
+                value={input}
+                onChange={(e) => setInput(e.target.value)}
+                placeholder="Type a message..."
+                className="flex-1 bg-muted/50 border-nerva-border focus:border-nerva-cyan/50 h-11 rounded-xl"
+                disabled={sending}
+              />
+              <Button
+                type="submit"
+                disabled={!input.trim() || sending}
+                className="bg-gradient-to-r from-nerva-cyan to-nerva-blue text-nerva-dark h-11 px-4 rounded-xl"
+              >
+                <Send className="w-4 h-4" />
+              </Button>
+            </form>
+          </div>
         </div>
       </div>
     </div>
@@ -400,6 +573,7 @@ function ChatPage({ business }: { business: Business }) {
 function LeadsPage({ business }: { business: Business }) {
   const [leads, setLeads] = useState<Lead[]>([]);
   const [loading, setLoading] = useState(true);
+  const { toast } = useToast();
 
   const loadLeads = useCallback(async () => {
     try {
@@ -413,6 +587,7 @@ function LeadsPage({ business }: { business: Business }) {
   const deleteLead = async (id: string) => {
     if (!confirm('Delete this lead?')) return;
     await fetch(`/api/leads?id=${id}`, { method: 'DELETE' });
+    toast({ title: 'Lead deleted', description: 'The lead has been removed.' });
     loadLeads();
   };
 
@@ -480,6 +655,10 @@ function AgentsPage({ business, refresh }: { business: Business; refresh: () => 
   const [showCreate, setShowCreate] = useState(false);
   const [newAgentType, setNewAgentType] = useState('');
   const [newAgentName, setNewAgentName] = useState('');
+  const [limitModal, setLimitModal] = useState(false);
+  const { toast } = useToast();
+
+  const currentLimit = agentLimits[business.subscriptionStatus] || 1;
 
   const loadAgents = useCallback(async () => {
     try {
@@ -492,11 +671,30 @@ function AgentsPage({ business, refresh }: { business: Business; refresh: () => 
 
   const createAgent = async () => {
     if (!newAgentType || !newAgentName) return;
-    await fetch('/api/agents', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ businessId: business.id, type: newAgentType, name: newAgentName }),
-    });
+
+    // Check subscription limit on client side
+    if (agents.length >= currentLimit) {
+      setLimitModal(true);
+      return;
+    }
+
+    try {
+      const res = await fetch('/api/agents', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ businessId: business.id, type: newAgentType, name: newAgentName }),
+      });
+
+      if (res.status === 403) {
+        setLimitModal(true);
+        return;
+      }
+
+      if (res.ok) {
+        toast({ title: 'Agent created', description: `${newAgentName} is now active.` });
+      }
+    } catch {} 
+
     setShowCreate(false);
     setNewAgentType('');
     setNewAgentName('');
@@ -507,6 +705,7 @@ function AgentsPage({ business, refresh }: { business: Business; refresh: () => 
   const deleteAgent = async (id: string) => {
     if (!confirm('Delete this agent?')) return;
     await fetch(`/api/agents?id=${id}`, { method: 'DELETE' });
+    toast({ title: 'Agent deleted', description: 'The agent has been removed.' });
     loadAgents();
     refresh();
   };
@@ -518,7 +717,7 @@ function AgentsPage({ business, refresh }: { business: Business; refresh: () => 
       <div className="flex items-center justify-between mb-6">
         <div>
           <h1 className="text-2xl font-bold">AI Agents</h1>
-          <p className="text-muted-foreground">Manage your AI workforce</p>
+          <p className="text-muted-foreground">Manage your AI workforce · {agents.length}/{currentLimit === 999 ? '∞' : currentLimit} agents</p>
         </div>
         <Button
           onClick={() => setShowCreate(!showCreate)}
@@ -527,6 +726,33 @@ function AgentsPage({ business, refresh }: { business: Business; refresh: () => 
           <Plus className="w-4 h-4 mr-2" /> Add Agent
         </Button>
       </div>
+
+      {/* Subscription limit modal */}
+      {limitModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
+          <div className="glass-card rounded-2xl p-6 max-w-md w-full text-center">
+            <div className="w-14 h-14 rounded-xl bg-amber-500/10 flex items-center justify-center mx-auto mb-4">
+              <AlertTriangle className="w-7 h-7 text-amber-400" />
+            </div>
+            <h3 className="text-xl font-bold mb-2">Agent Limit Reached</h3>
+            <p className="text-sm text-muted-foreground mb-1">
+              You&apos;re on the <span className="text-foreground font-medium capitalize">{business.subscriptionStatus}</span> plan with a limit of {currentLimit === 999 ? 'unlimited' : currentLimit} agent{currentLimit !== 1 && currentLimit !== 999 ? 's' : ''}.
+            </p>
+            <p className="text-sm text-muted-foreground mb-6">Upgrade your plan to create more agents.</p>
+            <div className="flex gap-3">
+              <Button variant="ghost" onClick={() => setLimitModal(false)} className="flex-1">
+                Cancel
+              </Button>
+              <Button
+                onClick={() => setLimitModal(false)}
+                className="flex-1 shine-effect bg-gradient-to-r from-nerva-cyan to-nerva-blue text-nerva-dark font-semibold rounded-xl"
+              >
+                <Crown className="w-4 h-4 mr-2" /> View Plans
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Create agent panel */}
       {showCreate && (
@@ -603,6 +829,157 @@ function AgentsPage({ business, refresh }: { business: Business; refresh: () => 
   );
 }
 
+/* ============ SUBSCRIPTION ============ */
+function SubscriptionPage({ business, refresh }: { business: Business; refresh: () => void }) {
+  const { toast } = useToast();
+
+  const handleUpgrade = (planId: string) => {
+    toast({
+      title: 'Coming Soon!',
+      description: `${planId.charAt(0).toUpperCase() + planId.slice(1)} plan payment integration is coming soon. Contact us to upgrade manually.`,
+    });
+  };
+
+  return (
+    <div>
+      <h1 className="text-2xl font-bold mb-1">Subscription</h1>
+      <p className="text-muted-foreground mb-8">Manage your plan and billing</p>
+
+      {/* Current plan status */}
+      <div className="glass-card rounded-2xl p-6 mb-8">
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+          <div className="flex items-center gap-4">
+            <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-nerva-cyan to-nerva-blue flex items-center justify-center">
+              <ShieldCheck className="w-6 h-6 text-nerva-dark" />
+            </div>
+            <div>
+              <div className="text-sm text-muted-foreground">Current Plan</div>
+              <div className="text-xl font-bold capitalize">{business.subscriptionStatus}</div>
+            </div>
+          </div>
+          <div className="flex gap-4 text-sm">
+            <div className="text-center">
+              <div className="font-bold">{agentLimits[business.subscriptionStatus] || 1 === 999 ? '∞' : (agentLimits[business.subscriptionStatus] || 1)}</div>
+              <div className="text-xs text-muted-foreground">Agents</div>
+            </div>
+            <div className="w-px bg-nerva-border" />
+            <div className="text-center">
+              <div className="font-bold capitalize">{business.subscriptionStatus === 'agency' ? 'Unlimited' : business.subscriptionStatus === 'pro' ? '500' : business.subscriptionStatus === 'starter' ? '100' : '10'}</div>
+              <div className="text-xs text-muted-foreground">Leads/mo</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Plan cards */}
+      <h2 className="text-lg font-semibold mb-4">Available Plans</h2>
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+        {subscriptionPlans.map((plan) => {
+          const isCurrentPlan = plan.id === business.subscriptionStatus;
+          return (
+            <div
+              key={plan.id}
+              className={`glass-card rounded-2xl p-6 flex flex-col relative ${
+                plan.highlight ? 'ring-1 ring-nerva-cyan/40' : ''
+              } ${isCurrentPlan ? 'ring-1 ring-nerva-green/40' : ''}`}
+            >
+              {plan.highlight && (
+                <div className="absolute -top-3 left-1/2 -translate-x-1/2 px-3 py-0.5 rounded-full bg-gradient-to-r from-nerva-cyan to-nerva-blue text-nerva-dark text-xs font-semibold">
+                  Most Popular
+                </div>
+              )}
+              {isCurrentPlan && (
+                <div className="absolute -top-3 left-1/2 -translate-x-1/2 px-3 py-0.5 rounded-full bg-nerva-green/20 text-nerva-green text-xs font-semibold border border-nerva-green/30">
+                  Current Plan
+                </div>
+              )}
+              <div className="mb-4">
+                <h3 className="font-bold text-lg">{plan.name}</h3>
+                <div className="flex items-baseline gap-1 mt-1">
+                  <span className="text-2xl font-bold">{plan.price}</span>
+                  <span className="text-sm text-muted-foreground">{plan.currency}{plan.period}</span>
+                </div>
+              </div>
+              <div className="flex-1 space-y-2 mb-6">
+                {plan.features.map((feature, i) => (
+                  <div key={i} className="flex items-center gap-2 text-sm">
+                    <CheckCircle2 className={`w-3.5 h-3.5 flex-shrink-0 ${plan.highlight ? 'text-nerva-cyan' : 'text-nerva-green'}`} />
+                    <span className="text-muted-foreground">{feature}</span>
+                  </div>
+                ))}
+              </div>
+              <Button
+                onClick={() => handleUpgrade(plan.id)}
+                disabled={isCurrentPlan}
+                className={`w-full rounded-xl font-semibold ${
+                  isCurrentPlan
+                    ? 'bg-muted text-muted-foreground'
+                    : plan.highlight
+                      ? 'shine-effect bg-gradient-to-r from-nerva-cyan to-nerva-blue text-nerva-dark'
+                      : 'border border-nerva-border bg-transparent text-foreground hover:bg-muted/50'
+                }`}
+                variant={isCurrentPlan || plan.highlight ? undefined : 'outline'}
+              >
+                {isCurrentPlan ? 'Current Plan' : 'Upgrade'}
+              </Button>
+            </div>
+          );
+        })}
+      </div>
+
+      {/* Feature comparison */}
+      <div className="mt-8">
+        <h2 className="text-lg font-semibold mb-4">Feature Comparison</h2>
+        <div className="glass-card rounded-2xl overflow-hidden">
+          <div className="overflow-x-auto">
+            <table className="w-full">
+              <thead>
+                <tr className="border-b border-nerva-border">
+                  <th className="text-left text-xs font-medium text-muted-foreground p-4">Feature</th>
+                  <th className="text-center text-xs font-medium text-muted-foreground p-4">Free</th>
+                  <th className="text-center text-xs font-medium text-muted-foreground p-4">Starter</th>
+                  <th className="text-center text-xs font-medium text-muted-foreground p-4 bg-nerva-cyan/5">Pro</th>
+                  <th className="text-center text-xs font-medium text-muted-foreground p-4">Agency</th>
+                </tr>
+              </thead>
+              <tbody>
+                {[
+                  { feature: 'AI Agents', values: ['1', '3', '7', '∞'] },
+                  { feature: 'Leads/month', values: ['10', '100', '500', '∞'] },
+                  { feature: 'WhatsApp Agent', values: [true, true, true, true] },
+                  { feature: 'Knowledge Agent', values: [false, true, true, true] },
+                  { feature: 'Barista Agent', values: [false, false, true, true] },
+                  { feature: 'Lead Gen Agent', values: [false, false, true, true] },
+                  { feature: 'Content Agent', values: [false, false, true, true] },
+                  { feature: 'Workflow Agent', values: [false, false, false, true] },
+                  { feature: 'Voice Agent', values: [false, false, false, true] },
+                  { feature: 'API Access', values: [false, false, true, true] },
+                  { feature: 'Priority Support', values: [false, false, true, true] },
+                  { feature: 'Custom Integrations', values: [false, false, false, true] },
+                  { feature: 'White Label', values: [false, false, false, true] },
+                ].map((row, i) => (
+                  <tr key={i} className="border-b border-nerva-border/30">
+                    <td className="p-4 text-sm">{row.feature}</td>
+                    {row.values.map((val, j) => (
+                      <td key={j} className={`p-4 text-center ${j === 2 ? 'bg-nerva-cyan/5' : ''}`}>
+                        {typeof val === 'boolean' ? (
+                          val ? <CheckCircle2 className="w-4 h-4 text-nerva-green mx-auto" /> : <span className="text-muted-foreground/30">—</span>
+                        ) : (
+                          <span className="text-sm">{val}</span>
+                        )}
+                      </td>
+                    ))}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 /* ============ SETTINGS ============ */
 function SettingsPage({ business, refresh }: { business: Business; refresh: () => void }) {
   const [copied, setCopied] = useState(false);
@@ -610,24 +987,29 @@ function SettingsPage({ business, refresh }: { business: Business; refresh: () =
   const [contextData, setContextData] = useState(business.contextData);
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
+  const { toast } = useToast();
 
   const copyApiKey = () => {
     navigator.clipboard.writeText(business.apiKey);
     setCopied(true);
+    toast({ title: 'API key copied!', description: 'Your API key has been copied to clipboard.' });
     setTimeout(() => setCopied(false), 2000);
   };
 
   const saveSettings = async () => {
     setSaving(true);
     try {
-      await fetch('/api/business', {
+      const res = await fetch('/api/business', {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ id: business.id, name, contextData }),
       });
-      setSaved(true);
-      refresh();
-      setTimeout(() => setSaved(false), 2000);
+      if (res.ok) {
+        setSaved(true);
+        toast({ title: 'Settings saved!', description: 'Your business settings have been updated.' });
+        refresh();
+        setTimeout(() => setSaved(false), 2000);
+      }
     } catch {} finally { setSaving(false); }
   };
 

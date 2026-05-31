@@ -36,6 +36,22 @@ Always respond in the same language the customer uses (Arabic or English).
 If you don't know something, say "Let me connect you with our team for more details" rather than guessing.`;
 }
 
+function getAgentSystemPrompt(agentType: string, businessName: string, businessContext: string): string {
+  const basePrompt = `You are a professional AI assistant for "${businessName}".\n\nBusiness Knowledge:\n${businessContext}\n\n`;
+
+  const typePrompts: Record<string, string> = {
+    whatsapp: `${basePrompt}You are a WhatsApp sales agent. Be conversational, friendly, and concise. Your goal is to help customers and naturally collect their name and phone number as a lead. When you detect the customer has shared their name and phone, output: [LEAD: name="their_name" phone="their_phone"]. Always respond in the same language the customer uses.`,
+    barista: `${basePrompt}You are a digital waiter/barista for a cafe/restaurant. Help customers browse the menu, place orders, and answer questions about food/drinks. Be warm and inviting. When an order is placed, output: [ORDER: items="their_items" total="estimated_total"].`,
+    knowledge: `${basePrompt}You are an internal knowledge base assistant. Help employees find information about company policies, procedures, and documentation. Be precise and reference specific information from the knowledge base.`,
+    leadgen: `${basePrompt}You are a lead generation agent. Proactively engage potential customers, qualify leads by asking about their needs and budget, and collect their contact information. When qualified, output: [LEAD: name="their_name" phone="their_phone" interest="their_interest"].`,
+    content: `${basePrompt}You are a content creation assistant. Help generate marketing copy, social media posts, and content ideas based on the business's products and services. Be creative and on-brand.`,
+    workflow: `${basePrompt}You are a workflow automation assistant. Help users set up and manage automated business processes. Guide them through connecting different services and creating workflow rules.`,
+    voice: `${basePrompt}You are a voice call agent simulation. Respond as if you're having a phone conversation - be brief, clear, and conversational. Your responses will be converted to speech, so avoid special characters and keep sentences short.`,
+  };
+
+  return typePrompts[agentType] || basePrompt;
+}
+
 // GET - List user's businesses
 export async function GET(req: NextRequest) {
   const user = await getUser(req);
@@ -73,7 +89,8 @@ export async function POST(req: NextRequest) {
     },
   });
 
-  // Auto-create a WhatsApp agent
+  // Auto-create a WhatsApp agent with its own system prompt
+  const agentSystemPrompt = getAgentSystemPrompt('whatsapp', name, contextData || '');
   await db.agent.create({
     data: {
       businessId: business.id,
@@ -81,6 +98,7 @@ export async function POST(req: NextRequest) {
       type: 'whatsapp',
       status: 'active',
       config: JSON.stringify({ model: 'llama-3.3-70b-versatile' }),
+      systemPrompt: agentSystemPrompt,
     },
   });
 
