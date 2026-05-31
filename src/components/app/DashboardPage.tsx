@@ -1348,7 +1348,7 @@ function BaristaPage({ business }: { business: Business }) {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           id: baristaAgents[0].id,
-          config: JSON.stringify({ menu: filtered }),
+          config: { menu: filtered },
         }),
       });
       if (res.ok) {
@@ -2052,16 +2052,15 @@ function KnowledgePage({ business, refresh }: { business: Business; refresh: () 
     setChatMessages(prev => [...prev, { role: 'user', content: userMsg }]);
     setChatSending(true);
     try {
-      const knowledgeAgent = knowledgeAgents[0];
-      const res = await fetch('/api/chat', {
+      const res = await fetch('/api/knowledge/chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ businessId: business.id, message: userMsg, agentId: knowledgeAgent?.id }),
+        body: JSON.stringify({ businessId: business.id, message: userMsg }),
       });
       const data = await res.json();
-      setChatMessages(prev => [...prev, { role: 'assistant', content: res.ok ? data.response : 'Error getting response.' }]);
+      setChatMessages(prev => [...prev, { role: 'assistant', content: res.ok ? data.response : 'Error getting response. Please try again.' }]);
     } catch {
-      setChatMessages(prev => [...prev, { role: 'assistant', content: 'Connection error.' }]);
+      setChatMessages(prev => [...prev, { role: 'assistant', content: 'Connection error. Please check your internet and try again.' }]);
     } finally { setChatSending(false); }
   };
 
@@ -2286,38 +2285,21 @@ function SubscriptionPage({ business, refresh }: { business: Business; refresh: 
     if (!paymentModal || !screenshot) return;
     setSubmitting(true);
     try {
-      const plan = subscriptionPlans.find(p => p.id === paymentModal);
       const amount = planPrices[paymentModal] || 0;
 
-      // Create payment record
-      const payRes = await fetch('/api/payments', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          businessId: business.id,
-          plan: paymentModal,
-          amount,
-        }),
-      });
-
-      if (!payRes.ok) {
-        toast({ title: 'Error', description: 'Failed to create payment record.', variant: 'destructive' });
-        return;
-      }
-
-      const payment = await payRes.json();
-
-      // Upload screenshot
+      // Create payment record + upload screenshot in one request
       const formData = new FormData();
+      formData.append('businessId', business.id);
+      formData.append('plan', paymentModal);
+      formData.append('amount', String(amount));
       formData.append('screenshot', screenshot);
-      formData.append('paymentId', payment.id);
 
-      const uploadRes = await fetch('/api/payments/upload', {
+      const payRes = await fetch('/api/payments', {
         method: 'POST',
         body: formData,
       });
 
-      if (uploadRes.ok) {
+      if (payRes.ok) {
         toast({
           title: 'Payment submitted!',
           description: 'We\'ll verify within 10 minutes and activate your subscription.',
@@ -2326,10 +2308,15 @@ function SubscriptionPage({ business, refresh }: { business: Business; refresh: 
         setScreenshot(null);
         loadPayments();
       } else {
-        toast({ title: 'Upload failed', description: 'Payment created but screenshot upload failed. Please try again.', variant: 'destructive' });
+        const data = await payRes.json().catch(() => ({}));
+        toast({
+          title: 'Error',
+          description: data.error || 'Failed to submit payment. Please try again.',
+          variant: 'destructive',
+        });
       }
     } catch {
-      toast({ title: 'Error', description: 'Network error. Please try again.', variant: 'destructive' });
+      toast({ title: 'Error', description: 'Network error. Please check your connection and try again.', variant: 'destructive' });
     } finally { setSubmitting(false); }
   };
 

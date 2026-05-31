@@ -91,7 +91,7 @@ export async function POST(req: NextRequest) {
       name,
       type,
       status: 'active',
-      config: JSON.stringify(config || {}),
+      config: typeof config === 'string' ? config : JSON.stringify(config || {}),
       systemPrompt,
     },
   });
@@ -122,7 +122,7 @@ export async function PUT(req: NextRequest) {
       ...(name && { name }),
       ...(type && { type }),
       ...(status && { status }),
-      ...(config !== undefined && { config: JSON.stringify(config) }),
+      ...(config !== undefined && { config: typeof config === 'string' ? config : JSON.stringify(config) }),
       ...(systemPrompt !== undefined && { systemPrompt }),
     },
   });

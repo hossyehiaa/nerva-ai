@@ -1,8 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { jwtVerify } from 'jose';
 import { db } from '@/lib/db';
-import { writeFile } from 'fs/promises';
-import path from 'path';
 
 const JWT_SECRET = new TextEncoder().encode(
   process.env.JWT_SECRET || 'nerva-ai-secret-key-change-in-production'
@@ -19,7 +17,7 @@ async function getUser(req: NextRequest) {
   }
 }
 
-// POST - Upload screenshot for a payment
+// POST - Upload a payment screenshot
 export async function POST(req: NextRequest) {
   const user = await getUser(req);
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
@@ -29,9 +27,16 @@ export async function POST(req: NextRequest) {
     const screenshot = formData.get('screenshot') as File | null;
     const paymentId = formData.get('paymentId') as string | null;
 
-    if (!screenshot || !paymentId) {
+    if (!screenshot) {
       return NextResponse.json(
-        { error: 'screenshot and paymentId are required' },
+        { error: 'Screenshot file is required' },
+        { status: 400 }
+      );
+    }
+
+    if (!paymentId) {
+      return NextResponse.json(
+        { error: 'Payment ID is required' },
         { status: 400 }
       );
     }
@@ -42,30 +47,46 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Payment not found' }, { status: 404 });
     }
 
-    // Generate unique filename
-    const ext = path.extname(screenshot.name) || '.png';
-    const filename = `${Date.now()}${ext}`;
-    const uploadsDir = path.join(process.cwd(), 'public', 'uploads');
-    const filePath = path.join(uploadsDir, filename);
+    // Validate file type
+    const allowedTypes = ['image/png', 'image/jpeg', 'image/jpg', 'image/webp', 'image/gif'];
+    if (!allowedTypes.includes(screenshot.type)) {
+      return NextResponse.json(
+        { error: 'Invalid file type. Only images are allowed.' },
+        { status: 400 }
+      );
+    }
 
-    // Ensure uploads directory exists
-    const { mkdir } = await import('fs/promises');
-    await mkdir(uploadsDir, { recursive: true });
+    // Validate file size (max 10MB)
+    const maxSize = 10 * 1024 * 1024;
+    if (screenshot.size > maxSize) {
+      return NextResponse.json(
+        { error: 'File too large. Maximum size is 10MB.' },
+        { status: 400 }
+      );
+    }
 
-    // Write the file
+    // Convert screenshot to base64 data URL for storage
     const bytes = await screenshot.arrayBuffer();
     const buffer = Buffer.from(bytes);
-    await writeFile(filePath, buffer);
+    const base64 = buffer.toString('base64');
+    const dataUrl = `data:${screenshot.type};base64,${base64}`;
 
-    // Update the payment record
+    // Update the payment record with the screenshot URL
     const updated = await db.payment.update({
       where: { id: paymentId },
-      data: { screenshotUrl: `/uploads/${filename}` },
+      data: { screenshotUrl: dataUrl },
     });
 
-    return NextResponse.json(updated);
+    return NextResponse.json({
+      success: true,
+      paymentId: updated.id,
+      screenshotUrl: updated.screenshotUrl ? 'uploaded' : null,
+    });
   } catch (error) {
-    console.error('Upload error:', error);
-    return NextResponse.json({ error: 'Upload failed' }, { status: 500 });
+    console.error('Screenshot upload error:', error);
+    return NextResponse.json(
+      { error: 'Failed to upload screenshot' },
+      { status: 500 }
+    );
   }
 }

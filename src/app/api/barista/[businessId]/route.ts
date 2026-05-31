@@ -30,19 +30,30 @@ export async function GET(
     let menuItems: { name: string; price: string; description?: string; category?: string }[] = [];
     if (baristaAgent) {
       try {
-        const config = JSON.parse(baristaAgent.config);
+        let config = JSON.parse(baristaAgent.config);
+        // Handle double-encoded JSON
+        if (typeof config === 'string') {
+          try { config = JSON.parse(config); } catch { /* skip */ }
+        }
         if (config.menu && Array.isArray(config.menu)) {
-          menuItems = config.menu.map((item: string) => {
-            // Parse menu items like "Espresso - 35 EGP" or "Latte: 45 EGP - Hot coffee"
-            const parts = item.split(/\s*[-:]\s*/);
-            if (parts.length >= 2) {
-              return {
-                name: parts[0].trim(),
-                price: parts[1].trim(),
-                description: parts.length > 2 ? parts.slice(2).join(' - ').trim() : undefined,
-              };
-            }
-            return { name: item.trim(), price: '' };
+          menuItems = config.menu.flatMap((item: string) => {
+            // Split multi-line menu items into individual items
+            const lines = item.split(/\n/).map((l: string) => l.trim()).filter((l: string) => l && !l.startsWith('⸻') && !l.startsWith('---'));
+            return lines.map((line: string) => {
+              // Clean up the line - remove bullet points and special chars
+              const cleaned = line.replace(/^[*\-–•·]\s*/, '').trim();
+              if (!cleaned) return null;
+              // Parse menu items like "Espresso - 35 EGP" or "Latte: 45 EGP - Hot coffee"
+              const priceMatch = cleaned.match(/^(.+?)\s*[-:]\s*(\d+[\s]*EGP|EGP\s*\d+|\$\d+|\d+\s*LE)/i);
+              if (priceMatch) {
+                return {
+                  name: priceMatch[1].trim(),
+                  price: priceMatch[2].trim(),
+                };
+              }
+              // Items without price - just the name
+              return { name: cleaned, price: '' };
+            }).filter(Boolean) as { name: string; price: string; description?: string; category?: string }[];
           });
         }
       } catch {
@@ -96,9 +107,17 @@ export async function POST(
     let menuContext = '';
     if (baristaAgent) {
       try {
-        const config = JSON.parse(baristaAgent.config);
+        let config = JSON.parse(baristaAgent.config);
+        // Handle double-encoded JSON
+        if (typeof config === 'string') {
+          try { config = JSON.parse(config); } catch { /* skip */ }
+        }
         if (config.menu && Array.isArray(config.menu) && config.menu.length > 0) {
-          menuContext = `\n\nAvailable Menu Items:\n${(config.menu as string[]).map((item, i) => `${i + 1}. ${item}`).join('\n')}`;
+          // Flatten multi-line items for better AI context
+          const allItems = (config.menu as string[]).flatMap((item: string) =>
+            item.split(/\n/).map((l: string) => l.trim()).filter((l: string) => l && !l.startsWith('⸻') && !l.startsWith('---'))
+          );
+          menuContext = `\n\nAvailable Menu Items:\n${allItems.map((item, i) => `${i + 1}. ${item}`).join('\n')}`;
         }
       } catch {
         // skip
