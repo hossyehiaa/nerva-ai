@@ -17,7 +17,7 @@ import {
 } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 
-type Page = 'overview' | 'chat' | 'leads' | 'agents' | 'whatsapp' | 'barista' | 'workflows' | 'leadgen' | 'knowledge' | 'subscription' | 'settings';
+type Page = 'overview' | 'chat' | 'leads' | 'agents' | 'whatsapp' | 'barista' | 'workflows' | 'leadgen' | 'knowledge' | 'subscription' | 'settings' | 'admin';
 
 interface Business {
   id: string;
@@ -279,6 +279,7 @@ export default function DashboardPage({ onNavigate }: DashboardPageProps) {
       items: [
         { id: 'subscription' as Page, label: 'Subscription', icon: CreditCard, iconColor: '' },
         { id: 'settings' as Page, label: 'Settings', icon: Settings, iconColor: '' },
+        ...(user?.role === 'admin' ? [{ id: 'admin' as Page, label: 'Admin Panel', icon: ShieldCheck, iconColor: 'text-amber-400' }] : []),
       ],
     },
   ];
@@ -444,6 +445,7 @@ export default function DashboardPage({ onNavigate }: DashboardPageProps) {
           {page === 'knowledge' && <KnowledgePage business={business} refresh={loadBusiness} />}
           {page === 'subscription' && <SubscriptionPage business={business} refresh={loadBusiness} />}
           {page === 'settings' && <SettingsPage business={business} refresh={loadBusiness} />}
+          {page === 'admin' && user?.role === 'admin' && <AdminPage />}
         </div>
       </main>
     </div>
@@ -2630,6 +2632,152 @@ function SettingsPage({ business, refresh }: { business: Business; refresh: () =
           {saved ? 'Saved!' : 'Save Changes'}
         </Button>
       </div>
+    </div>
+  );
+}
+
+
+/* ============ ADMIN PANEL ============ */
+function AdminPage() {
+  const [payments, setPayments] = useState<{id:string;userId:string;businessId:string|null;amount:number;currency:string;plan:string;method:string;screenshotUrl:string|null;status:string;adminNote:string|null;createdAt:string;user:{email:string;name:string|null}}[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [processingId, setProcessingId] = useState<string | null>(null);
+  const [previewImage, setPreviewImage] = useState<string | null>(null);
+  const { toast } = useToast();
+
+  const fetchPayments = useCallback(async () => {
+    try {
+      const res = await fetch('/api/payments/admin');
+      if (res.ok) {
+        const data = await res.json();
+        setPayments(data);
+      }
+    } catch {
+      toast({ title: 'Error', description: 'Failed to fetch payments.', variant: 'destructive' });
+    } finally {
+      setLoading(false);
+    }
+  }, [toast]);
+
+  useEffect(() => { fetchPayments(); }, [fetchPayments]);
+
+  const handleAction = async (paymentId: string, action: 'approve' | 'reject') => {
+    let adminNote: string | undefined;
+    if (action === 'reject') {
+      adminNote = prompt('Enter rejection reason (optional):') || '';
+    }
+    setProcessingId(paymentId);
+    try {
+      const res = await fetch('/api/payments/admin', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ paymentId, action, adminNote }),
+      });
+      if (res.ok) {
+        toast({ title: action === 'approve' ? 'Payment Approved' : 'Payment Rejected', description: `Subscription ${action === 'approve' ? 'activated' : 'rejected'} successfully.` });
+        fetchPayments();
+      } else {
+        const data = await res.json();
+        toast({ title: 'Error', description: data.error || 'Failed.', variant: 'destructive' });
+      }
+    } catch {
+      toast({ title: 'Error', description: 'Network error.', variant: 'destructive' });
+    } finally {
+      setProcessingId(null);
+    }
+  };
+
+  const planColors: Record<string, string> = { starter: 'text-blue-400 bg-blue-500/10', pro: 'text-purple-400 bg-purple-500/10', agency: 'text-amber-400 bg-amber-500/10' };
+  const statusColors: Record<string, string> = { pending: 'text-amber-400 bg-amber-500/10', approved: 'text-nerva-green bg-nerva-green/10', rejected: 'text-red-400 bg-red-500/10' };
+
+  return (
+    <div>
+      <div className="flex items-center gap-3 mb-1">
+        <div className="w-10 h-10 rounded-lg bg-amber-500/10 flex items-center justify-center">
+          <ShieldCheck className="w-5 h-5 text-amber-400" />
+        </div>
+        <div>
+          <h1 className="text-2xl font-bold">Admin Panel</h1>
+          <p className="text-muted-foreground">Review and manage subscription payments</p>
+        </div>
+      </div>
+
+      {loading ? (
+        <div className="flex justify-center py-12"><Loader2 className="w-6 h-6 text-nerva-cyan animate-spin" /></div>
+      ) : (
+        <div className="mt-6 space-y-6">
+          <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
+            <div className="glass-card rounded-xl p-4">
+              <div className="text-2xl font-bold text-amber-400">{payments.filter(p => p.status === 'pending').length}</div>
+              <div className="text-xs text-muted-foreground">Pending</div>
+            </div>
+            <div className="glass-card rounded-xl p-4">
+              <div className="text-2xl font-bold">{payments.reduce((s, p) => s + p.amount, 0).toLocaleString()} EGP</div>
+              <div className="text-xs text-muted-foreground">Total Value</div>
+            </div>
+            <div className="glass-card rounded-xl p-4 col-span-2 sm:col-span-1">
+              <div className="text-2xl font-bold text-nerva-green">{payments.filter(p => p.status === 'approved').length}</div>
+              <div className="text-xs text-muted-foreground">Approved</div>
+            </div>
+          </div>
+
+          {payments.length === 0 ? (
+            <div className="glass-card rounded-2xl p-12 text-center">
+              <CheckCircle2 className="w-12 h-12 text-nerva-green/40 mx-auto mb-3" />
+              <p className="text-muted-foreground">No payments to review.</p>
+            </div>
+          ) : (
+            <div className="space-y-3">
+              {payments.map((p) => (
+                <div key={p.id} className="glass-card rounded-xl p-4 sm:p-5">
+                  <div className="flex flex-col sm:flex-row sm:items-center gap-4">
+                    <div className="flex-1">
+                      <div className="flex items-center gap-2 mb-2">
+                        <div className="w-8 h-8 rounded-full bg-gradient-to-br from-nerva-cyan to-nerva-blue flex items-center justify-center text-nerva-dark text-xs font-bold flex-shrink-0">
+                          {p.user.name?.[0] || p.user.email[0].toUpperCase()}
+                        </div>
+                        <div className="min-w-0">
+                          <div className="text-sm font-medium truncate">{p.user.name || 'User'}</div>
+                          <div className="text-xs text-muted-foreground truncate">{p.user.email}</div>
+                        </div>
+                      </div>
+                      <div className="flex flex-wrap items-center gap-2 text-sm">
+                        <span className={`text-xs px-2 py-0.5 rounded-full font-semibold ${planColors[p.plan] || 'text-muted-foreground bg-muted/20'}`}>{p.plan}</span>
+                        <span className="font-semibold">{p.amount.toLocaleString()} {p.currency}</span>
+                        <span className={`text-xs px-2 py-0.5 rounded-full ${statusColors[p.status] || statusColors.pending}`}>{p.status}</span>
+                        <span className="text-xs text-muted-foreground">{new Date(p.createdAt).toLocaleDateString()}</span>
+                        {p.screenshotUrl && (
+                          <button onClick={() => setPreviewImage(p.screenshotUrl)} className="text-xs text-nerva-cyan hover:underline flex items-center gap-1">
+                            <Eye className="w-3 h-3" /> View Screenshot
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                    {p.status === 'pending' && (
+                      <div className="flex gap-2 flex-shrink-0">
+                        <Button onClick={() => handleAction(p.id, 'approve')} disabled={processingId === p.id} className="bg-nerva-green hover:bg-nerva-green/90 text-white rounded-xl h-9 px-4 text-xs">
+                          {processingId === p.id ? <Loader2 className="w-3 h-3 animate-spin" /> : <><CheckCircle2 className="w-3 h-3 mr-1" /> Approve</>}
+                        </Button>
+                        <Button onClick={() => handleAction(p.id, 'reject')} disabled={processingId === p.id} variant="outline" className="border-red-500/30 text-red-400 hover:bg-red-500/10 rounded-xl h-9 px-4 text-xs">
+                          <X className="w-3 h-3 mr-1" /> Reject
+                        </Button>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
+      {previewImage && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm p-4" onClick={() => setPreviewImage(null)}>
+          <div className="glass-card rounded-2xl p-2 max-w-lg w-full" onClick={(e) => e.stopPropagation()}>
+            <img src={previewImage} alt="Screenshot" className="w-full rounded-xl object-contain max-h-[70vh]" />
+          </div>
+        </div>
+      )}
     </div>
   );
 }

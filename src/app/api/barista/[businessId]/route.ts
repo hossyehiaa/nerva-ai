@@ -12,8 +12,7 @@ export async function GET(
     where: { id: businessId },
     include: {
       agents: {
-        where: { type: 'barista', status: 'active' },
-        take: 1,
+        where: { status: 'active' },
       },
     },
   });
@@ -22,9 +21,11 @@ export async function GET(
     return NextResponse.json({ error: 'Business not found' }, { status: 404 });
   }
 
-  // Extract menu items from the barista agent config if available
+  // Try to find a barista agent first, then fall back to any agent
+  const baristaAgent = business.agents.find(a => a.type === 'barista') || business.agents[0];
+
+  // Extract menu items from the agent config if available
   let menuItems: unknown[] = [];
-  const baristaAgent = business.agents[0];
   if (baristaAgent) {
     try {
       const config = JSON.parse(baristaAgent.config);
@@ -59,8 +60,7 @@ export async function POST(
       where: { id: businessId },
       include: {
         agents: {
-          where: { type: 'barista', status: 'active' },
-          take: 1,
+          where: { status: 'active' },
         },
       },
     });
@@ -69,11 +69,15 @@ export async function POST(
       return NextResponse.json({ error: 'Business not found' }, { status: 404 });
     }
 
-    // Determine the system prompt - use barista agent's prompt or fallback
+    // Try to find a barista agent first, then fall back to any agent
+    const baristaAgent = business.agents.find(a => a.type === 'barista') || business.agents[0];
+
+    // Determine the system prompt - use agent's prompt or business prompt or fallback
     let systemPrompt: string;
-    const baristaAgent = business.agents[0];
     if (baristaAgent?.systemPrompt) {
       systemPrompt = baristaAgent.systemPrompt;
+    } else if (business.systemPrompt) {
+      systemPrompt = business.systemPrompt;
     } else {
       // Fallback barista prompt
       systemPrompt = `You are a digital waiter/barista for "${business.name}", a business in the ${business.industry} industry.\n\nBusiness Knowledge:\n${business.contextData}\n\nHelp customers browse the menu, place orders, and answer questions about food/drinks. Be warm and inviting. When an order is placed, output: [ORDER: items="their_items" total="estimated_total"]. Always respond in the same language the customer uses.`;

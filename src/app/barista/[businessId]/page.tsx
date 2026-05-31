@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useRef, React } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Send, Coffee, Loader2, AlertCircle, ArrowUp } from 'lucide-react';
 
 interface BusinessInfo {
@@ -63,7 +63,7 @@ export default function BaristaPage({
           {
             id: 'welcome',
             role: 'assistant',
-            content: `Welcome to ${data.name}! \u{1F60A} I'm your digital barista. How can I help you today? You can ask about our menu, prices, hours, or place an order!`,
+            content: `Welcome to ${data.name}! I'm your digital assistant. How can I help you today? You can ask about our products, prices, or place an order!`,
             timestamp: new Date(),
           },
         ]);
@@ -229,7 +229,7 @@ export default function BaristaPage({
         {/* Welcome hint cards */}
         {messages.length <= 1 && (
           <div className="flex flex-wrap gap-2 mb-4 justify-center">
-            {['What\'s on the menu?', 'What are your hours?', 'I\'d like to place an order'].map((hint) => (
+            {['Show me your products', 'What are your prices?', 'I\'d like to place an order'].map((hint) => (
               <button
                 key={hint}
                 onClick={() => {
