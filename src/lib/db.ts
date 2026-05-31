@@ -7,10 +7,8 @@ const globalForPrisma = globalThis as unknown as {
 function createPrismaClient(): PrismaClient {
   const databaseUrl = process.env.DATABASE_URL;
 
-  if (!databaseUrl || databaseUrl.startsWith('file:') && process.env.VERCEL) {
-    // On Vercel with SQLite (which doesn't work), create a client anyway
-    // It will fail on queries but the app won't crash at startup
-    console.warn('[DB] Warning: SQLite DATABASE_URL detected on Vercel. API routes will not work properly. Please set a PostgreSQL DATABASE_URL.');
+  if (!databaseUrl) {
+    console.warn('[DB] Warning: No DATABASE_URL set. API routes will not work.');
   }
 
   return new PrismaClient({

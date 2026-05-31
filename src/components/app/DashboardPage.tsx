@@ -833,11 +833,31 @@ function AgentsPage({ business, refresh }: { business: Business; refresh: () => 
 function SubscriptionPage({ business, refresh }: { business: Business; refresh: () => void }) {
   const { toast } = useToast();
 
-  const handleUpgrade = (planId: string) => {
-    toast({
-      title: 'Coming Soon!',
-      description: `${planId.charAt(0).toUpperCase() + planId.slice(1)} plan payment integration is coming soon. Contact us to upgrade manually.`,
-    });
+  const [upgrading, setUpgrading] = useState<string | null>(null);
+
+  const handleUpgrade = async (planId: string) => {
+    setUpgrading(planId);
+    try {
+      const res = await fetch('/api/subscription', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ businessId: business.id, plan: planId }),
+      });
+      if (res.ok) {
+        toast({
+          title: 'Plan Updated!',
+          description: `You've been upgraded to the ${planId.charAt(0).toUpperCase() + planId.slice(1)} plan.`,
+        });
+        refresh();
+      } else {
+        const data = await res.json();
+        toast({ title: 'Error', description: data.error || 'Failed to update plan', variant: 'destructive' });
+      }
+    } catch {
+      toast({ title: 'Error', description: 'Network error. Please try again.', variant: 'destructive' });
+    } finally {
+      setUpgrading(null);
+    }
   };
 
   return (
@@ -910,7 +930,7 @@ function SubscriptionPage({ business, refresh }: { business: Business; refresh: 
               </div>
               <Button
                 onClick={() => handleUpgrade(plan.id)}
-                disabled={isCurrentPlan}
+                disabled={isCurrentPlan || upgrading !== null}
                 className={`w-full rounded-xl font-semibold ${
                   isCurrentPlan
                     ? 'bg-muted text-muted-foreground'
@@ -920,7 +940,8 @@ function SubscriptionPage({ business, refresh }: { business: Business; refresh: 
                 }`}
                 variant={isCurrentPlan || plan.highlight ? undefined : 'outline'}
               >
-                {isCurrentPlan ? 'Current Plan' : 'Upgrade'}
+                {upgrading === plan.id ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : null}
+                {isCurrentPlan ? 'Current Plan' : upgrading === plan.id ? 'Upgrading...' : 'Upgrade'}
               </Button>
             </div>
           );
