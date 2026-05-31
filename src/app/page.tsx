@@ -45,25 +45,32 @@ function AppRouter() {
     );
   }
 
-  // If loading timed out, treat as not logged in and show landing page
+  // If loading timed out, treat as not logged in
   const effectiveUser = loadingTimeout ? null : user;
 
-  // Logged in pages
-  if (effectiveUser) {
-    if (page === 'onboarding') {
-      return <OnboardingPage onComplete={() => setPage('dashboard')} />;
-    }
+  // Dashboard page (when user explicitly navigates to it)
+  if (page === 'dashboard' && effectiveUser) {
     return <DashboardPage onNavigate={setPage} />;
   }
 
-  // Public pages
+  // Onboarding page
+  if (page === 'onboarding' && effectiveUser) {
+    return <OnboardingPage onComplete={() => setPage('dashboard')} />;
+  }
+
+  // Login page
   if (page === 'login') {
     return <LoginPage onBack={() => setPage('home')} />;
   }
 
+  // Home page (ALWAYS the default - landing page shows for everyone)
   return (
     <div className="min-h-screen flex flex-col bg-nerva-dark">
-      <Navbar onLogin={() => setPage('login')} onDashboard={() => setPage('login')} />
+      <Navbar
+        isLoggedIn={!!effectiveUser}
+        onLogin={() => setPage('login')}
+        onDashboard={() => setPage(effectiveUser ? 'dashboard' : 'login')}
+      />
       <main className="flex-1">
         <Hero onGetStarted={() => setPage('login')} />
         <WhyNerva />
