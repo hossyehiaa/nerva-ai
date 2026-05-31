@@ -17,7 +17,7 @@ async function getUser(req: NextRequest) {
   }
 }
 
-// POST - Upload a payment screenshot
+// POST - Upload a payment screenshot (for existing payment without screenshot)
 export async function POST(req: NextRequest) {
   const user = await getUser(req);
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
@@ -56,11 +56,11 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // Validate file size (max 10MB)
-    const maxSize = 10 * 1024 * 1024;
+    // Max 3MB for Vercel serverless compatibility
+    const maxSize = 3 * 1024 * 1024;
     if (screenshot.size > maxSize) {
       return NextResponse.json(
-        { error: 'File too large. Maximum size is 10MB.' },
+        { error: 'File too large. Maximum size is 3MB. Please compress the image.' },
         { status: 400 }
       );
     }

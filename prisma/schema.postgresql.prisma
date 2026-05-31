@@ -17,6 +17,7 @@ model User {
   updatedAt     DateTime   @updatedAt
   businesses    Business[]
   subscriptions Subscription[]
+  payments      Payment[]
 }
 
 model Business {
@@ -93,4 +94,23 @@ model Subscription {
   user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId])
+}
+
+model Payment {
+  id            String    @id @default(cuid())
+  userId        String
+  businessId    String?
+  plan          String    // starter | pro | agency
+  amount        Float
+  currency      String    @default("EGP")
+  method        String    @default("instapay")
+  status        String    @default("pending") // pending | approved | rejected
+  screenshotUrl String?   // Base64 data URL of payment screenshot
+  adminNote     String?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+  user          User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([status])
 }
