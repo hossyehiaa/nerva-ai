@@ -5,7 +5,8 @@ const JWT_SECRET = new TextEncoder().encode(
   process.env.JWT_SECRET || 'nerva-ai-secret-key-change-in-production'
 );
 
-export async function middleware(req: NextRequest) {
+// Next.js 16 uses "proxy" instead of deprecated "middleware"
+export async function proxy(req: NextRequest) {
   const { pathname } = req.nextUrl;
 
   // Only protect /admin routes (but not /admin/login)

@@ -8,7 +8,10 @@ function createPrismaClient(): PrismaClient {
   let databaseUrl = process.env.DATABASE_URL;
 
   if (!databaseUrl) {
-    console.warn('[DB] Warning: No DATABASE_URL set. API routes will not work.');
+    // This is expected during build time — API routes only work at runtime
+    if (process.env.NODE_ENV !== 'production' || typeof window === 'undefined') {
+      // Only warn in dev or server context, not during static generation
+    }
   } else {
     // Auto-convert direct connection to pooled connection for better serverless performance
     // Neon pooled connections use the "-pooler" suffix after the endpoint ID

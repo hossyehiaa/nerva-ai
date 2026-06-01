@@ -1,6 +1,15 @@
 import { Resend } from 'resend';
 
-const resend = new Resend(process.env.RESEND_API_KEY);
+// Lazy-initialize Resend to avoid crashing during build when RESEND_API_KEY is not set
+let _resend: Resend | null = null;
+function getResend(): Resend {
+  if (!_resend) {
+    const apiKey = process.env.RESEND_API_KEY;
+    if (!apiKey) throw new Error('RESEND_API_KEY is not set');
+    _resend = new Resend(apiKey);
+  }
+  return _resend;
+}
 
 // Use resend.dev for testing, or custom domain when configured
 const FROM_EMAIL = process.env.EMAIL_FROM || 'Nerva AI <onboarding@resend.dev>';
@@ -114,7 +123,7 @@ If you didn't request a password reset, you can safely ignore this email.
   `;
 
   try {
-    const result = await resend.emails.send({
+    const result = await getResend().emails.send({
       from: FROM_EMAIL,
       to,
       subject: 'Reset Your Nerva AI Password',
@@ -197,7 +206,7 @@ export async function sendPasswordChangedEmail({ to, userName }: SendPasswordCha
   `;
 
   try {
-    await resend.emails.send({
+    await getResend().emails.send({
       from: FROM_EMAIL,
       to,
       subject: 'Your Nerva AI Password Was Changed',

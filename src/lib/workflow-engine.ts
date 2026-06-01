@@ -1,7 +1,15 @@
 import { db } from '@/lib/db';
 import { Resend } from 'resend';
 
-const resend = new Resend(process.env.RESEND_API_KEY);
+// Lazy-initialize Resend to avoid crashing during build when RESEND_API_KEY is not set
+let _resend: Resend | null = null;
+function getResend(): Resend | null {
+  if (!process.env.RESEND_API_KEY) return null;
+  if (!_resend) {
+    _resend = new Resend(process.env.RESEND_API_KEY);
+  }
+  return _resend;
+}
 const FROM_EMAIL = process.env.EMAIL_FROM || 'Nerva AI <onboarding@resend.dev>';
 
 interface WorkflowAction {
@@ -113,7 +121,9 @@ export class WorkflowEngine {
     );
 
     // Try to send actual email via Resend
-    if (recipient && process.env.RESEND_API_KEY) {
+    if (recipient) {
+      const resend = getResend();
+      if (resend) {
       try {
         await resend.emails.send({
           from: FROM_EMAIL,
@@ -144,6 +154,7 @@ export class WorkflowEngine {
         console.log(`[Workflow] Email sent to ${recipient}: ${subject}`);
       } catch (error) {
         console.error('[Workflow] Email send failed:', error);
+      }
       }
     }
 
