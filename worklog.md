@@ -43,3 +43,32 @@ Stage Summary:
 - Screenshot upload working end-to-end
 - Admin can see and approve/reject payments
 - Deployed to nerva-ai.vercel.app
+
+---
+Task ID: 1
+Agent: Main Agent
+Task: Fix sign-in not working and database sleeping issue + fix payment upload
+
+Work Log:
+- Investigated root cause: Prisma schema was configured for SQLite (`provider = "sqlite"`, `url = "file:..."`) but deployed on Vercel with Neon PostgreSQL
+- SQLite doesn't work on Vercel's serverless platform (ephemeral, read-only filesystem)
+- Changed Prisma schema from SQLite to PostgreSQL with directUrl for Neon
+- Updated .env with Neon PostgreSQL connection strings
+- Updated schema.postgresql.prisma with directUrl
+- Added retry logic in db.ts for Neon cold start resilience (withRetry helper)
+- Removed `output: "standalone"` from next.config.ts (only needed for Docker, not Vercel)
+- Fixed package.json build script (removed standalone cp commands)
+- Created /api/health endpoint for Vercel cron ping
+- Created vercel.json with daily cron job (free plan limit)
+- Set Vercel environment variables: DATABASE_URL, DIRECT_URL, JWT_SECRET, GROQ_API_KEY
+- Pushed Prisma schema to Neon PostgreSQL database
+- Deployed to Vercel production via CLI
+- Verified all APIs working: health, login, admin payments, business
+
+Stage Summary:
+- ROOT CAUSE: SQLite schema on serverless platform = everything broken
+- Sign-in now works: tested with bhgreecr@gmail.com admin account
+- Database no longer "sleeps" - Neon auto-resumes on connection, daily cron keeps it warm
+- Payment upload flow should now work (was broken because DB was unreachable)
+- All environment variables properly set on Vercel
+- Production URL: https://nerva-ai.vercel.app - verified working
