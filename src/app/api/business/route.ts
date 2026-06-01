@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { jwtVerify } from 'jose';
-import { db } from '@/lib/db';
+import { db, withRetry } from '@/lib/db';
 
 const JWT_SECRET = new TextEncoder().encode(
   process.env.JWT_SECRET || 'nerva-ai-secret-key-change-in-production'
@@ -57,11 +57,11 @@ export async function GET(req: NextRequest) {
   const user = await getUser(req);
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
-  const businesses = await db.business.findMany({
+  const businesses = await withRetry(() => db.business.findMany({
     where: { userId: user.id as string },
     include: { agents: true, _count: { select: { leads: true, knowledgeDocs: true, workflows: true } } },
     orderBy: { createdAt: 'desc' },
-  });
+  }));
 
   return NextResponse.json(businesses);
 }

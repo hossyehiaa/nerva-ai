@@ -130,3 +130,29 @@ Stage Summary:
 - WhatsApp setup now saves numbers to database
 - Payment screenshots now accept up to 5MB
 - 25 API routes deployed and verified
+
+---
+Task ID: 1
+Agent: Main Agent
+Task: Fix login not redirecting to dashboard
+
+Work Log:
+- Analyzed the full auth flow: page.tsx, auth.tsx, LoginPage.tsx, /api/auth/me, /api/auth/login
+- Identified ROOT CAUSE 1: After login, refreshUser() was called after 300ms. If Neon DB was cold, /api/auth/me failed, and refreshUser() set user to null — logging user out immediately after login
+- Identified ROOT CAUSE 2: /api/auth/me returned 401 for ALL errors including database connection failures, making it impossible to distinguish between "invalid token" and "DB cold start"
+- Identified ROOT CAUSE 3: No retry logic on critical DB-dependent endpoints for Neon cold starts
+
+Fixes Applied:
+1. /api/auth/me: Separated JWT verification from DB query. If JWT is valid but DB fails, return user data from JWT payload with _partial flag instead of 401
+2. auth.tsx: Removed setTimeout(() => refreshUser(), 300) from login() — this was the main culprit causing user nullification after login
+3. auth.tsx: Added hasSessionRef to track active session, preventing refreshUser() from nullifying user on temporary network/DB errors
+4. auth.tsx: refreshUser() now only clears user on explicit 401 (invalid token), not on network errors or 5xx responses
+5. page.tsx: Added redirectedRef to prevent redirect from being overridden by state changes. Added proper logout detection effect
+6. /api/auth/login: Added withRetry() for DB queries to handle Neon cold starts
+7. /api/business: Added withRetry() for GET endpoint since dashboard depends on it
+8. DashboardPage: loadBusiness() now retries up to 3 times with exponential backoff for cold start resilience
+
+Stage Summary:
+- Deployed to https://nerva-ai.vercel.app
+- Login → Dashboard redirect should now work reliably even with Neon cold starts
+- User session is protected from being nullified by temporary DB/network issues

@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, createContext, useContext, ReactNode } from 'react';
+import { useState, useEffect, useRef, createContext, useContext, ReactNode } from 'react';
 
 interface User {
   id: string;
@@ -8,6 +8,7 @@ interface User {
   name: string | null;
   role: string;
   businesses?: Business[];
+  _partial?: boolean;
 }
 
 interface Business {
@@ -47,12 +48,15 @@ const AuthContext = createContext<AuthContextType | undefined>(undefined);
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
+  // Track whether we have an active session — protects against refreshUser()
+  // nullifying the user during a temporary network/DB outage
+  const hasSessionRef = useRef(false);
 
   const refreshUser = async () => {
     try {
       // Add timeout to prevent infinite loading on cold starts
       const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 8000);
+      const timeoutId = setTimeout(() => controller.abort(), 12000);
 
       const res = await fetch('/api/auth/me', { signal: controller.signal });
       clearTimeout(timeoutId);
@@ -60,11 +64,20 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       if (res.ok) {
         const data = await res.json();
         setUser(data);
-      } else {
+        hasSessionRef.current = true;
+      } else if (res.status === 401) {
+        // Only clear user on explicit authentication failure (invalid/expired token)
+        setUser(null);
+        hasSessionRef.current = false;
+      }
+      // For other errors (503, network, etc.), keep the existing user
+    } catch {
+      // Network error / timeout — don't clear user if we already have a session
+      // This prevents cold-start DB outages from logging the user out
+      if (!hasSessionRef.current) {
         setUser(null);
       }
-    } catch {
-      setUser(null);
+      // If we DO have a session, keep the existing user — the error is temporary
     } finally {
       setLoading(false);
     }
@@ -99,10 +112,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           role: data.role,
         });
         setLoading(false);
+        hasSessionRef.current = true;
 
-        // Then refresh in background to get full data (businesses, etc.)
-        // Don't await — let it update silently
-        setTimeout(() => refreshUser(), 300);
+        // NOTE: We intentionally do NOT call refreshUser() here.
+        // The dashboard loads its own business data via /api/business.
+        // refreshUser() was causing a bug where it would nullify the user
+        // on a cold database, effectively logging the user out immediately.
 
         return { success: true };
       }
@@ -151,6 +166,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       // Ignore logout errors
     }
     setUser(null);
+    hasSessionRef.current = false;
   };
 
   return (

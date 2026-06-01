@@ -13,12 +13,15 @@ import Footer from '@/components/sections/Footer';
 import LoginPage from '@/components/app/LoginPage';
 import DashboardPage from '@/components/app/DashboardPage';
 import OnboardingPage from '@/components/app/OnboardingPage';
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 
 function AppRouter() {
   const { user, loading } = useAuth();
   const [page, setPage] = useState<'home' | 'login' | 'dashboard' | 'onboarding'>('home');
   const [loadingTimeout, setLoadingTimeout] = useState(false);
+  // Track if we've already redirected to dashboard for this session
+  // This prevents the redirect from being overridden by state changes
+  const redirectedRef = useRef(false);
 
   // If loading takes too long (e.g., cold start), show the landing page anyway
   useEffect(() => {
@@ -30,15 +33,28 @@ function AppRouter() {
     }
   }, [loading]);
 
-  // Redirect to dashboard after successful login
+  // Redirect to dashboard when user becomes available
   useEffect(() => {
-    if (user && page === 'login') {
-      setPage('dashboard');
+    if (user && !redirectedRef.current) {
+      // If user just logged in, always go to dashboard
+      if (page === 'login') {
+        redirectedRef.current = true;
+        setPage('dashboard');
+      }
+      // If user is on home page and has a session, they can still browse
+      // They use the "Dashboard" button in navbar to go to dashboard
     }
   }, [user, page]);
 
-  // If user is logged in and on home page, show dashboard option
-  // (but don't auto-redirect from home - let them browse)
+  // Reset redirect flag when user logs out
+  useEffect(() => {
+    if (!user) {
+      redirectedRef.current = false;
+      if (page === 'dashboard' || page === 'onboarding') {
+        setPage('home');
+      }
+    }
+  }, [user, page]);
 
   if (loading && !loadingTimeout) {
     return (
@@ -55,9 +71,7 @@ function AppRouter() {
     );
   }
 
-  // Use real user if available, otherwise check loading state
-  // After login, user state is set directly - always use it
-  // During initial load, if timeout happened and no user, treat as not logged in
+  // Always use the actual user state — never nullify it based on loading
   const effectiveUser = user;
 
   // Dashboard page (when user explicitly navigates to it)
@@ -72,7 +86,15 @@ function AppRouter() {
 
   // Login page
   if (page === 'login') {
-    return <LoginPage onBack={() => setPage('home')} onLoginSuccess={() => setPage('dashboard')} />;
+    return (
+      <LoginPage
+        onBack={() => setPage('home')}
+        onLoginSuccess={() => {
+          redirectedRef.current = true;
+          setPage('dashboard');
+        }}
+      />
+    );
   }
 
   // Home page (ALWAYS the default - landing page shows for everyone)

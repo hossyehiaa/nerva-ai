@@ -197,22 +197,30 @@ export default function DashboardPage({ onNavigate }: DashboardPageProps) {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
   useEffect(() => {
-    loadBusiness();
+    loadBusiness().finally(() => setLoading(false));
   }, []);
 
-  const loadBusiness = async () => {
-    try {
-      const res = await fetch('/api/business');
-      if (res.ok) {
-        const businesses = await res.json();
-        if (businesses.length > 0) {
-          setBusiness(businesses[0]);
+  const loadBusiness = async (retries = 3) => {
+    for (let attempt = 0; attempt < retries; attempt++) {
+      try {
+        const res = await fetch('/api/business');
+        if (res.ok) {
+          const businesses = await res.json();
+          if (businesses.length > 0) {
+            setBusiness(businesses[0]);
+          }
+          return; // Success
         }
+        if (res.status === 401) {
+          return; // Auth error, don't retry
+        }
+      } catch (err) {
+        console.error(`loadBusiness attempt ${attempt + 1} failed:`, err);
       }
-    } catch (err) {
-      console.error(err);
-    } finally {
-      setLoading(false);
+      // Wait before retrying (for Neon cold starts)
+      if (attempt < retries - 1) {
+        await new Promise(resolve => setTimeout(resolve, 1500 * (attempt + 1)));
+      }
     }
   };
 

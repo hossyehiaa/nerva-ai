@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { db } from '@/lib/db';
+import { db, withRetry } from '@/lib/db';
 import bcrypt from 'bcryptjs';
 import { SignJWT } from 'jose';
 
@@ -18,7 +18,8 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    const user = await db.user.findUnique({ where: { email } });
+    // Use withRetry to handle Neon cold starts
+    const user = await withRetry(() => db.user.findUnique({ where: { email } }));
     if (!user) {
       return NextResponse.json(
         { error: 'Invalid email or password' },
@@ -64,6 +65,14 @@ export async function POST(req: NextRequest) {
     return response;
   } catch (error) {
     console.error('Login error:', error);
+    // Check if it's a database connection error
+    const errorMsg = error instanceof Error ? error.message : String(error);
+    if (errorMsg.includes('Connection') || errorMsg.includes('timeout') || errorMsg.includes('P1001') || errorMsg.includes('P1008')) {
+      return NextResponse.json(
+        { error: 'Database is waking up. Please try again in a few seconds.' },
+        { status: 503 }
+      );
+    }
     return NextResponse.json(
       { error: 'Internal server error. Please try again.' },
       { status: 500 }
