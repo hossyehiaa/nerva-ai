@@ -17,6 +17,14 @@ function createPrismaClient(): PrismaClient {
   });
 }
 
+// Singleton pattern to avoid creating multiple Prisma clients in dev
 export const db = globalForPrisma.prisma ?? createPrismaClient();
 
 if (process.env.NODE_ENV !== 'production') globalForPrisma.prisma = db;
+
+// Graceful shutdown
+if (process.env.NODE_ENV === 'production') {
+  process.on('beforeExit', async () => {
+    await db.$disconnect();
+  });
+}
