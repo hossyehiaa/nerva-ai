@@ -1,5 +1,6 @@
 generator client {
-  provider = "prisma-client-js"
+  provider        = "prisma-client-js"
+  output          = "../node_modules/.prisma/client"
 }
 
 datasource db {
@@ -33,12 +34,16 @@ model Business {
   subscriptionStatus String       @default("free") // free | starter | pro | agency
   agentLimit        Int           @default(1)
   leadLimit         Int           @default(10)
+  whatsappNumber    String?       // WhatsApp Business number
+  whatsappInstance  String?       // Evolution API instance name
   createdAt         DateTime      @default(now())
   updatedAt         DateTime      @updatedAt
   user              User          @relation(fields: [userId], references: [id], onDelete: Cascade)
   leads             Lead[]
   agents            Agent[]
   conversations     Conversation[]
+  knowledgeDocs     KnowledgeDoc[]
+  workflows         Workflow[]
 
   @@index([userId])
 }
@@ -65,7 +70,9 @@ model Lead {
   customerContact String?
   intent          String?
   source          String    @default("ai_chat") // ai_chat | barista | manual
+  status          String    @default("new") // new | contacted | qualified | converted | lost
   createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @default(now()) @updatedAt
   business        Business  @relation(fields: [businessId], references: [id], onDelete: Cascade)
 
   @@index([businessId])
@@ -129,4 +136,36 @@ model PasswordReset {
 
   @@index([userId])
   @@index([token])
+}
+
+model KnowledgeDoc {
+  id         String   @id @default(cuid())
+  businessId String
+  title      String
+  content    String
+  category   String   @default("general") // general | policy | onboarding | procedures | faq
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+  business   Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
+
+  @@index([businessId])
+  @@index([category])
+}
+
+model Workflow {
+  id            String   @id @default(cuid())
+  businessId    String
+  name          String
+  description   String   @default("")
+  trigger       String   // new_lead | new_order | schedule | manual | webhook
+  triggerConfig String   @default("{}") // JSON config for the trigger
+  actions       String   @default("[]") // JSON array of action objects
+  status        String   @default("active") // active | paused | draft
+  lastRunAt     DateTime?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+  business      Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
+
+  @@index([businessId])
+  @@index([trigger])
 }
