@@ -2,7 +2,8 @@ import { Resend } from 'resend';
 
 const resend = new Resend(process.env.RESEND_API_KEY);
 
-const FROM_EMAIL = 'Nerva AI <onboarding@nerva-ai.vercel.app>';
+// Use resend.dev for testing, or custom domain when configured
+const FROM_EMAIL = process.env.EMAIL_FROM || 'Nerva AI <onboarding@resend.dev>';
 
 interface SendPasswordResetEmailParams {
   to: string;
