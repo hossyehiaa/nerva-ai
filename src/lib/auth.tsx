@@ -90,9 +90,20 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       const data = await res.json();
 
       if (res.ok) {
-        // Wait a tick for cookie to be set, then refresh user
-        await new Promise(resolve => setTimeout(resolve, 200));
-        await refreshUser();
+        // Immediately set user from login response so the UI can redirect
+        // This avoids depending on refreshUser() which might fail on cold DB
+        setUser({
+          id: data.id,
+          email: data.email,
+          name: data.name,
+          role: data.role,
+        });
+        setLoading(false);
+
+        // Then refresh in background to get full data (businesses, etc.)
+        // Don't await — let it update silently
+        setTimeout(() => refreshUser(), 300);
+
         return { success: true };
       }
       return { success: false, error: data.error || 'Login failed' };
