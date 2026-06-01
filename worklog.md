@@ -182,3 +182,31 @@ Stage Summary:
 - Existing businesses should now load reliably even with Neon cold starts
 - New business creation now shows errors instead of silently failing
 - Dashboard shows "Loading Error" + Retry button instead of misleading "Set Up Your Business"
+---
+Task ID: 1
+Agent: Main Agent
+Task: Fix database/business loading errors on Nerva AI
+
+Work Log:
+- Investigated "Loading Error - Could not load your business data" issue
+- Discovered the root cause: `schema.postgresql.prisma` was outdated and missing critical fields
+- The build script (`scripts/build.cjs`) copies `schema.postgresql.prisma` over `schema.prisma` during every Vercel build
+- Missing fields: Business.whatsappNumber, Business.whatsappInstance, KnowledgeDoc model, Workflow model, Lead.status, Lead.updatedAt
+- This caused Prisma "column does not exist" errors on every deployment
+- Fixed by updating `schema.postgresql.prisma` to match current `schema.prisma`
+- Also fixed Neon pooler URL conversion regex (was inserting -pooler in wrong position)
+- Ran `npx prisma db push` to sync database schema
+- Increased withRetry to 5 retries with 1500ms base delay across ALL API routes
+- Added /api/db/warmup endpoint for pre-warming cold databases
+- Added auto-warmup on page load and before business creation
+- Dashboard now auto-retries after 10s on failure with visual indicator
+- Added isRetryableError helper for consistent error detection
+- Auto-converts direct Neon connection to pooled connection for better serverless performance
+- All endpoints verified working: warmup, health, auth, business
+
+Stage Summary:
+- Root cause identified: Outdated schema.postgresql.prisma overwriting correct schema during builds
+- Database schema fully synced with Prisma schema
+- Both direct and pooled Neon connections verified working
+- Business "nevox" (fitness) found for user bhgreecr@gmail.com with 1 agent
+- Deployed to nerva-ai.vercel.app and pushed to GitHub
