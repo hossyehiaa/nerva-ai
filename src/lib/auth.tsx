@@ -104,7 +104,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
       if (res.ok) {
         // Immediately set user from login response so the UI can redirect
-        // This avoids depending on refreshUser() which might fail on cold DB
         setUser({
           id: data.id,
           email: data.email,
@@ -114,10 +113,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         setLoading(false);
         hasSessionRef.current = true;
 
-        // NOTE: We intentionally do NOT call refreshUser() here.
-        // The dashboard loads its own business data via /api/business.
-        // refreshUser() was causing a bug where it would nullify the user
-        // on a cold database, effectively logging the user out immediately.
+        // After a short delay, try to refresh user data from DB
+        // This gets the full user object including businesses
+        // We do this in the background so it doesn't block the redirect
+        setTimeout(() => {
+          refreshUser().catch(() => {
+            // Ignore errors — the user is already logged in from JWT
+          });
+        }, 500);
 
         return { success: true };
       }

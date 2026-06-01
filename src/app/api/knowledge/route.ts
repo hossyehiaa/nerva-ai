@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { jwtVerify } from 'jose';
-import { db } from '@/lib/db';
+import { db, withRetry, isRetryableError } from '@/lib/db';
 
 const JWT_SECRET = new TextEncoder().encode(
   process.env.JWT_SECRET || 'nerva-ai-secret-key-change-in-production'
@@ -51,18 +51,26 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: 'businessId required' }, { status: 400 });
   }
 
-  // Verify the business belongs to the user
-  const business = await db.business.findUnique({ where: { id: businessId } });
-  if (!business || business.userId !== user.id) {
-    return NextResponse.json({ error: 'Not found' }, { status: 404 });
+  try {
+    // Verify the business belongs to the user
+    const business = await withRetry(() => db.business.findUnique({ where: { id: businessId } }), 5, 1500);
+    if (!business || business.userId !== user.id) {
+      return NextResponse.json({ error: 'Not found' }, { status: 404 });
+    }
+
+    const docs = await withRetry(() => db.knowledgeDoc.findMany({
+      where: { businessId },
+      orderBy: { createdAt: 'desc' },
+    }), 5, 1500);
+
+    return NextResponse.json(docs);
+  } catch (error) {
+    console.error('Knowledge GET error:', error);
+    if (isRetryableError(error)) {
+      return NextResponse.json({ error: 'Database connection error. Please try again.', retryable: true }, { status: 503 });
+    }
+    return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
   }
-
-  const docs = await db.knowledgeDoc.findMany({
-    where: { businessId },
-    orderBy: { createdAt: 'desc' },
-  });
-
-  return NextResponse.json(docs);
 }
 
 // POST - Create a new knowledge doc
@@ -87,38 +95,46 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  // Verify the business belongs to the user
-  const business = await db.business.findUnique({ where: { id: businessId } });
-  if (!business || business.userId !== user.id) {
-    return NextResponse.json({ error: 'Not found' }, { status: 404 });
+  try {
+    // Verify the business belongs to the user
+    const business = await withRetry(() => db.business.findUnique({ where: { id: businessId } }), 5, 1500);
+    if (!business || business.userId !== user.id) {
+      return NextResponse.json({ error: 'Not found' }, { status: 404 });
+    }
+
+    // Create the knowledge doc
+    const doc = await withRetry(() => db.knowledgeDoc.create({
+      data: {
+        businessId,
+        title,
+        content,
+        category: category || 'general',
+      },
+    }), 5, 1500);
+
+    // Update the business contextData by appending this doc's content
+    const separator = business.contextData ? '\n\n' : '';
+    const updatedContextData = business.contextData + separator + `--- ${title} ---\n${content}`;
+
+    // Regenerate the system prompt
+    const systemPrompt = generateSystemPrompt(business.name, business.industry, updatedContextData);
+
+    await withRetry(() => db.business.update({
+      where: { id: businessId },
+      data: {
+        contextData: updatedContextData,
+        systemPrompt,
+      },
+    }), 5, 1500);
+
+    return NextResponse.json(doc, { status: 201 });
+  } catch (error) {
+    console.error('Knowledge POST error:', error);
+    if (isRetryableError(error)) {
+      return NextResponse.json({ error: 'Database connection error. Please try again.', retryable: true }, { status: 503 });
+    }
+    return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
   }
-
-  // Create the knowledge doc
-  const doc = await db.knowledgeDoc.create({
-    data: {
-      businessId,
-      title,
-      content,
-      category: category || 'general',
-    },
-  });
-
-  // Update the business contextData by appending this doc's content
-  const separator = business.contextData ? '\n\n' : '';
-  const updatedContextData = business.contextData + separator + `--- ${title} ---\n${content}`;
-
-  // Regenerate the system prompt
-  const systemPrompt = generateSystemPrompt(business.name, business.industry, updatedContextData);
-
-  await db.business.update({
-    where: { id: businessId },
-    data: {
-      contextData: updatedContextData,
-      systemPrompt,
-    },
-  });
-
-  return NextResponse.json(doc, { status: 201 });
 }
 
 // PUT - Update a knowledge doc
@@ -132,55 +148,63 @@ export async function PUT(req: NextRequest) {
     return NextResponse.json({ error: 'Knowledge doc ID is required' }, { status: 400 });
   }
 
-  const doc = await db.knowledgeDoc.findUnique({ where: { id } });
-  if (!doc) {
-    return NextResponse.json({ error: 'Not found' }, { status: 404 });
+  try {
+    const doc = await withRetry(() => db.knowledgeDoc.findUnique({ where: { id } }), 5, 1500);
+    if (!doc) {
+      return NextResponse.json({ error: 'Not found' }, { status: 404 });
+    }
+
+    // Verify the business belongs to the user
+    const business = await withRetry(() => db.business.findUnique({ where: { id: doc.businessId } }), 5, 1500);
+    if (!business || business.userId !== user.id) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+
+    const validCategories = ['general', 'policy', 'onboarding', 'procedures', 'faq'];
+    if (category && !validCategories.includes(category)) {
+      return NextResponse.json(
+        { error: 'Invalid category. Choose: general, policy, onboarding, procedures, faq' },
+        { status: 400 }
+      );
+    }
+
+    // Update the knowledge doc
+    const updated = await withRetry(() => db.knowledgeDoc.update({
+      where: { id },
+      data: {
+        ...(title !== undefined && { title }),
+        ...(content !== undefined && { content }),
+        ...(category !== undefined && { category }),
+      },
+    }), 5, 1500);
+
+    // If content or title changed, rebuild the business contextData and systemPrompt
+    if (content !== undefined || title !== undefined) {
+      const allDocs = await withRetry(() => db.knowledgeDoc.findMany({
+        where: { businessId: doc.businessId },
+        orderBy: { createdAt: 'asc' },
+      }), 5, 1500);
+
+      const contextData = allDocs
+        .map((d) => `--- ${d.title} ---\n${d.content}`)
+        .join('\n\n');
+
+      const systemPrompt = generateSystemPrompt(business.name, business.industry, contextData);
+
+      await withRetry(() => db.business.update({
+        where: { id: doc.businessId },
+        data: { contextData, systemPrompt },
+      }), 5, 1500);
+    }
+
+    return NextResponse.json(updated);
+  } catch (error) {
+    console.error('Knowledge PUT error:', error);
+    if (isRetryableError(error)) {
+      return NextResponse.json({ error: 'Database connection error. Please try again.', retryable: true }, { status: 503 });
+    }
+    return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
   }
-
-  // Verify the business belongs to the user
-  const business = await db.business.findUnique({ where: { id: doc.businessId } });
-  if (!business || business.userId !== user.id) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-  }
-
-  const validCategories = ['general', 'policy', 'onboarding', 'procedures', 'faq'];
-  if (category && !validCategories.includes(category)) {
-    return NextResponse.json(
-      { error: 'Invalid category. Choose: general, policy, onboarding, procedures, faq' },
-      { status: 400 }
-    );
-  }
-
-  // Update the knowledge doc
-  const updated = await db.knowledgeDoc.update({
-    where: { id },
-    data: {
-      ...(title !== undefined && { title }),
-      ...(content !== undefined && { content }),
-      ...(category !== undefined && { category }),
-    },
-  });
-
-  // If content or title changed, rebuild the business contextData and systemPrompt
-  if (content !== undefined || title !== undefined) {
-    const allDocs = await db.knowledgeDoc.findMany({
-      where: { businessId: doc.businessId },
-      orderBy: { createdAt: 'asc' },
-    });
-
-    const contextData = allDocs
-      .map((d) => `--- ${d.title} ---\n${d.content}`)
-      .join('\n\n');
-
-    const systemPrompt = generateSystemPrompt(business.name, business.industry, contextData);
-
-    await db.business.update({
-      where: { id: doc.businessId },
-      data: { contextData, systemPrompt },
-    });
-  }
-
-  return NextResponse.json(updated);
 }
 
 // DELETE - Delete a knowledge doc
@@ -193,34 +217,42 @@ export async function DELETE(req: NextRequest) {
 
   if (!id) return NextResponse.json({ error: 'ID required' }, { status: 400 });
 
-  const doc = await db.knowledgeDoc.findUnique({ where: { id } });
-  if (!doc) return NextResponse.json({ error: 'Not found' }, { status: 404 });
+  try {
+    const doc = await withRetry(() => db.knowledgeDoc.findUnique({ where: { id } }), 5, 1500);
+    if (!doc) return NextResponse.json({ error: 'Not found' }, { status: 404 });
 
-  // Verify the business belongs to the user
-  const business = await db.business.findUnique({ where: { id: doc.businessId } });
-  if (!business || business.userId !== user.id) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    // Verify the business belongs to the user
+    const business = await withRetry(() => db.business.findUnique({ where: { id: doc.businessId } }), 5, 1500);
+    if (!business || business.userId !== user.id) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+
+    // Delete the doc
+    await withRetry(() => db.knowledgeDoc.delete({ where: { id } }), 5, 1500);
+
+    // Rebuild contextData and systemPrompt from remaining docs
+    const remainingDocs = await withRetry(() => db.knowledgeDoc.findMany({
+      where: { businessId: doc.businessId },
+      orderBy: { createdAt: 'asc' },
+    }), 5, 1500);
+
+    const contextData = remainingDocs
+      .map((d) => `--- ${d.title} ---\n${d.content}`)
+      .join('\n\n');
+
+    const systemPrompt = generateSystemPrompt(business.name, business.industry, contextData);
+
+    await withRetry(() => db.business.update({
+      where: { id: doc.businessId },
+      data: { contextData, systemPrompt },
+    }), 5, 1500);
+
+    return NextResponse.json({ success: true });
+  } catch (error) {
+    console.error('Knowledge DELETE error:', error);
+    if (isRetryableError(error)) {
+      return NextResponse.json({ error: 'Database connection error. Please try again.', retryable: true }, { status: 503 });
+    }
+    return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
   }
-
-  // Delete the doc
-  await db.knowledgeDoc.delete({ where: { id } });
-
-  // Rebuild contextData and systemPrompt from remaining docs
-  const remainingDocs = await db.knowledgeDoc.findMany({
-    where: { businessId: doc.businessId },
-    orderBy: { createdAt: 'asc' },
-  });
-
-  const contextData = remainingDocs
-    .map((d) => `--- ${d.title} ---\n${d.content}`)
-    .join('\n\n');
-
-  const systemPrompt = generateSystemPrompt(business.name, business.industry, contextData);
-
-  await db.business.update({
-    where: { id: doc.businessId },
-    data: { contextData, systemPrompt },
-  });
-
-  return NextResponse.json({ success: true });
 }

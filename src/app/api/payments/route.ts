@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { jwtVerify } from 'jose';
-import { db } from '@/lib/db';
+import { db, withRetry, isRetryableError } from '@/lib/db';
 
 const JWT_SECRET = new TextEncoder().encode(
   process.env.JWT_SECRET || 'nerva-ai-secret-key-change-in-production'
@@ -23,7 +23,7 @@ export async function GET(req: NextRequest) {
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
   try {
-    const payments = await db.payment.findMany({
+    const payments = await withRetry(() => db.payment.findMany({
       where: { userId: user.id as string },
       select: {
         id: true,
@@ -38,11 +38,14 @@ export async function GET(req: NextRequest) {
         adminNote: true,
       },
       orderBy: { createdAt: 'desc' },
-    });
+    }), 5, 1500);
 
     return NextResponse.json(payments);
   } catch (error) {
     console.error('Payment list error:', error);
+    if (isRetryableError(error)) {
+      return NextResponse.json({ error: 'Database connection error. Please try again.', retryable: true }, { status: 503 });
+    }
     return NextResponse.json({ error: 'Failed to fetch payments' }, { status: 500 });
   }
 }
@@ -85,7 +88,7 @@ export async function POST(req: NextRequest) {
     }
 
     // Verify the business belongs to the user
-    const business = await db.business.findUnique({ where: { id: businessId } });
+    const business = await withRetry(() => db.business.findUnique({ where: { id: businessId } }), 5, 1500);
     if (!business || business.userId !== user.id) {
       return NextResponse.json({ error: 'Business not found or access denied' }, { status: 404 });
     }
@@ -124,7 +127,7 @@ export async function POST(req: NextRequest) {
     }
 
     // Create payment record
-    const payment = await db.payment.create({
+    const payment = await withRetry(() => db.payment.create({
       data: {
         userId: user.id as string,
         businessId,
@@ -134,11 +137,14 @@ export async function POST(req: NextRequest) {
         status: 'pending',
         screenshotUrl,
       },
-    });
+    }), 5, 1500);
 
     return NextResponse.json(payment, { status: 201 });
   } catch (error) {
     console.error('Payment creation error:', error);
+    if (isRetryableError(error)) {
+      return NextResponse.json({ error: 'Database connection error. Please try again.', retryable: true }, { status: 503 });
+    }
     return NextResponse.json(
       { error: 'Failed to create payment record. Please try again.' },
       { status: 500 }

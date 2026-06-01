@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { db } from '@/lib/db';
+import { db, withRetry, isRetryableError } from '@/lib/db';
 import { WorkflowEngine } from '@/lib/workflow-engine';
 
 export async function POST(req: NextRequest) {
@@ -10,7 +10,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'businessId and message are required' }, { status: 400 });
     }
 
-    const business = await db.business.findUnique({ where: { id: businessId } });
+    const business = await withRetry(() => db.business.findUnique({ where: { id: businessId } }), 5, 1500);
     if (!business) {
       return NextResponse.json({ error: 'Business not found' }, { status: 404 });
     }
@@ -18,7 +18,7 @@ export async function POST(req: NextRequest) {
     // Determine the system prompt - agent-specific or business-level
     let systemPrompt = business.systemPrompt;
     if (agentId) {
-      const agent = await db.agent.findUnique({ where: { id: agentId } });
+      const agent = await withRetry(() => db.agent.findUnique({ where: { id: agentId } }), 5, 1500);
       if (agent && agent.systemPrompt) {
         systemPrompt = agent.systemPrompt;
       } else if (agent) {
@@ -28,20 +28,20 @@ export async function POST(req: NextRequest) {
     }
 
     // Save user message
-    await db.conversation.create({
+    await withRetry(() => db.conversation.create({
       data: { businessId, agentId: agentId || null, role: 'user', content: message },
-    });
+    }), 5, 1500);
 
     // Get recent conversation history (last 8 messages) filtered by agentId if provided
     const historyFilter: Record<string, unknown> = { businessId };
     if (agentId) {
       historyFilter.agentId = agentId;
     }
-    const history = await db.conversation.findMany({
+    const history = await withRetry(() => db.conversation.findMany({
       where: historyFilter,
       orderBy: { createdAt: 'desc' },
       take: 8,
-    });
+    }), 5, 1500);
     history.reverse();
 
     // Build messages for AI
@@ -84,7 +84,7 @@ export async function POST(req: NextRequest) {
     if (leadMatch) {
       const leadName = leadMatch[1];
       const leadPhone = leadMatch[2];
-      const newLead = await db.lead.create({
+      const newLead = await withRetry(() => db.lead.create({
         data: {
           businessId,
           customerName: leadName,
@@ -92,7 +92,7 @@ export async function POST(req: NextRequest) {
           intent: message,
           source: 'ai_chat',
         },
-      });
+      }), 5, 1500);
       // Remove the lead tag from display
       aiResponse = aiResponse.replace(leadRegex, '').trim();
       // Fire workflow trigger for new lead
@@ -111,13 +111,16 @@ export async function POST(req: NextRequest) {
     }
 
     // Save AI response
-    await db.conversation.create({
+    await withRetry(() => db.conversation.create({
       data: { businessId, agentId: agentId || null, role: 'assistant', content: aiResponse },
-    });
+    }), 5, 1500);
 
     return NextResponse.json({ response: aiResponse });
   } catch (error) {
     console.error('Chat error:', error);
+    if (isRetryableError(error)) {
+      return NextResponse.json({ error: 'Database connection error. Please try again.', retryable: true }, { status: 503 });
+    }
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
   }
 }

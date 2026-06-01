@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { jwtVerify } from 'jose';
-import { db } from '@/lib/db';
+import { db, withRetry, isRetryableError } from '@/lib/db';
 
 const JWT_SECRET = new TextEncoder().encode(
   process.env.JWT_SECRET || 'nerva-ai-secret-key-change-in-production'
@@ -39,33 +39,41 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'Invalid plan. Choose: free, starter, pro, agency' }, { status: 400 });
   }
 
-  const business = await db.business.findUnique({ where: { id: businessId } });
-  if (!business || business.userId !== user.id) {
-    return NextResponse.json({ error: 'Not found' }, { status: 404 });
+  try {
+    const business = await withRetry(() => db.business.findUnique({ where: { id: businessId } }), 5, 1500);
+    if (!business || business.userId !== user.id) {
+      return NextResponse.json({ error: 'Not found' }, { status: 404 });
+    }
+
+    const limits = planLimits[plan];
+
+    // Update business subscription
+    const updated = await withRetry(() => db.business.update({
+      where: { id: businessId },
+      data: {
+        subscriptionStatus: plan,
+        agentLimit: limits.agents,
+        leadLimit: limits.leads,
+      },
+    }), 5, 1500);
+
+    // Create subscription record
+    await withRetry(() => db.subscription.create({
+      data: {
+        userId: user.id as string,
+        plan,
+        status: 'active',
+        startDate: new Date(),
+        endDate: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000), // 30 days
+      },
+    }), 5, 1500);
+
+    return NextResponse.json(updated);
+  } catch (error) {
+    console.error('Subscription POST error:', error);
+    if (isRetryableError(error)) {
+      return NextResponse.json({ error: 'Database connection error. Please try again.', retryable: true }, { status: 503 });
+    }
+    return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
   }
-
-  const limits = planLimits[plan];
-
-  // Update business subscription
-  const updated = await db.business.update({
-    where: { id: businessId },
-    data: {
-      subscriptionStatus: plan,
-      agentLimit: limits.agents,
-      leadLimit: limits.leads,
-    },
-  });
-
-  // Create subscription record
-  await db.subscription.create({
-    data: {
-      userId: user.id as string,
-      plan,
-      status: 'active',
-      startDate: new Date(),
-      endDate: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000), // 30 days
-    },
-  });
-
-  return NextResponse.json(updated);
 }

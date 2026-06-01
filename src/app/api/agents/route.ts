@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { jwtVerify } from 'jose';
-import { db } from '@/lib/db';
+import { db, withRetry, isRetryableError } from '@/lib/db';
 
 const JWT_SECRET = new TextEncoder().encode(
   process.env.JWT_SECRET || 'nerva-ai-secret-key-change-in-production'
@@ -45,17 +45,25 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: 'businessId required' }, { status: 400 });
   }
 
-  const business = await db.business.findUnique({ where: { id: businessId } });
-  if (!business || business.userId !== user.id) {
-    return NextResponse.json({ error: 'Not found' }, { status: 404 });
+  try {
+    const business = await withRetry(() => db.business.findUnique({ where: { id: businessId } }), 5, 1500);
+    if (!business || business.userId !== user.id) {
+      return NextResponse.json({ error: 'Not found' }, { status: 404 });
+    }
+
+    const agents = await withRetry(() => db.agent.findMany({
+      where: { businessId },
+      orderBy: { createdAt: 'desc' },
+    }), 5, 1500);
+
+    return NextResponse.json(agents);
+  } catch (error) {
+    console.error('Agents GET error:', error);
+    if (isRetryableError(error)) {
+      return NextResponse.json({ error: 'Database connection error. Please try again.', retryable: true }, { status: 503 });
+    }
+    return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
   }
-
-  const agents = await db.agent.findMany({
-    where: { businessId },
-    orderBy: { createdAt: 'desc' },
-  });
-
-  return NextResponse.json(agents);
 }
 
 // POST - Create a new agent
@@ -69,34 +77,42 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'businessId, name, and type are required' }, { status: 400 });
   }
 
-  const business = await db.business.findUnique({ where: { id: businessId } });
-  if (!business || business.userId !== user.id) {
-    return NextResponse.json({ error: 'Not found' }, { status: 404 });
+  try {
+    const business = await withRetry(() => db.business.findUnique({ where: { id: businessId } }), 5, 1500);
+    if (!business || business.userId !== user.id) {
+      return NextResponse.json({ error: 'Not found' }, { status: 404 });
+    }
+
+    // Subscription check - agent limits
+    const agentLimits: Record<string, number> = { free: 1, starter: 3, pro: 7, agency: 999 };
+    const currentAgents = await withRetry(() => db.agent.count({ where: { businessId } }), 5, 1500);
+    const limit = agentLimits[business.subscriptionStatus] || 1;
+    if (currentAgents >= limit) {
+      return NextResponse.json({ error: 'Agent limit reached. Please upgrade your plan.' }, { status: 403 });
+    }
+
+    // Auto-generate system prompt based on agent type
+    const systemPrompt = getAgentSystemPrompt(type, business.name, business.contextData);
+
+    const agent = await withRetry(() => db.agent.create({
+      data: {
+        businessId,
+        name,
+        type,
+        status: 'active',
+        config: typeof config === 'string' ? config : JSON.stringify(config || {}),
+        systemPrompt,
+      },
+    }), 5, 1500);
+
+    return NextResponse.json(agent, { status: 201 });
+  } catch (error) {
+    console.error('Agents POST error:', error);
+    if (isRetryableError(error)) {
+      return NextResponse.json({ error: 'Database connection error. Please try again.', retryable: true }, { status: 503 });
+    }
+    return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
   }
-
-  // Subscription check - agent limits
-  const agentLimits: Record<string, number> = { free: 1, starter: 3, pro: 7, agency: 999 };
-  const currentAgents = await db.agent.count({ where: { businessId } });
-  const limit = agentLimits[business.subscriptionStatus] || 1;
-  if (currentAgents >= limit) {
-    return NextResponse.json({ error: 'Agent limit reached. Please upgrade your plan.' }, { status: 403 });
-  }
-
-  // Auto-generate system prompt based on agent type
-  const systemPrompt = getAgentSystemPrompt(type, business.name, business.contextData);
-
-  const agent = await db.agent.create({
-    data: {
-      businessId,
-      name,
-      type,
-      status: 'active',
-      config: typeof config === 'string' ? config : JSON.stringify(config || {}),
-      systemPrompt,
-    },
-  });
-
-  return NextResponse.json(agent, { status: 201 });
 }
 
 // PUT - Update agent
@@ -108,26 +124,34 @@ export async function PUT(req: NextRequest) {
 
   if (!id) return NextResponse.json({ error: 'ID required' }, { status: 400 });
 
-  const agent = await db.agent.findUnique({ where: { id } });
-  if (!agent) return NextResponse.json({ error: 'Not found' }, { status: 404 });
+  try {
+    const agent = await withRetry(() => db.agent.findUnique({ where: { id } }), 5, 1500);
+    if (!agent) return NextResponse.json({ error: 'Not found' }, { status: 404 });
 
-  const business = await db.business.findUnique({ where: { id: agent.businessId } });
-  if (!business || business.userId !== user.id) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    const business = await withRetry(() => db.business.findUnique({ where: { id: agent.businessId } }), 5, 1500);
+    if (!business || business.userId !== user.id) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+
+    const updated = await withRetry(() => db.agent.update({
+      where: { id },
+      data: {
+        ...(name && { name }),
+        ...(type && { type }),
+        ...(status && { status }),
+        ...(config !== undefined && { config: typeof config === 'string' ? config : JSON.stringify(config) }),
+        ...(systemPrompt !== undefined && { systemPrompt }),
+      },
+    }), 5, 1500);
+
+    return NextResponse.json(updated);
+  } catch (error) {
+    console.error('Agents PUT error:', error);
+    if (isRetryableError(error)) {
+      return NextResponse.json({ error: 'Database connection error. Please try again.', retryable: true }, { status: 503 });
+    }
+    return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
   }
-
-  const updated = await db.agent.update({
-    where: { id },
-    data: {
-      ...(name && { name }),
-      ...(type && { type }),
-      ...(status && { status }),
-      ...(config !== undefined && { config: typeof config === 'string' ? config : JSON.stringify(config) }),
-      ...(systemPrompt !== undefined && { systemPrompt }),
-    },
-  });
-
-  return NextResponse.json(updated);
 }
 
 // DELETE - Delete agent
@@ -140,14 +164,22 @@ export async function DELETE(req: NextRequest) {
 
   if (!id) return NextResponse.json({ error: 'ID required' }, { status: 400 });
 
-  const agent = await db.agent.findUnique({ where: { id } });
-  if (!agent) return NextResponse.json({ error: 'Not found' }, { status: 404 });
+  try {
+    const agent = await withRetry(() => db.agent.findUnique({ where: { id } }), 5, 1500);
+    if (!agent) return NextResponse.json({ error: 'Not found' }, { status: 404 });
 
-  const business = await db.business.findUnique({ where: { id: agent.businessId } });
-  if (!business || business.userId !== user.id) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    const business = await withRetry(() => db.business.findUnique({ where: { id: agent.businessId } }), 5, 1500);
+    if (!business || business.userId !== user.id) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+
+    await withRetry(() => db.agent.delete({ where: { id } }), 5, 1500);
+    return NextResponse.json({ success: true });
+  } catch (error) {
+    console.error('Agents DELETE error:', error);
+    if (isRetryableError(error)) {
+      return NextResponse.json({ error: 'Database connection error. Please try again.', retryable: true }, { status: 503 });
+    }
+    return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
   }
-
-  await db.agent.delete({ where: { id } });
-  return NextResponse.json({ success: true });
 }

@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { db } from '@/lib/db';
+import { db, withRetry, isRetryableError } from '@/lib/db';
 import { WorkflowEngine } from '@/lib/workflow-engine';
 
 // GET - Public: Get business info for the barista chatbot
@@ -10,14 +10,14 @@ export async function GET(
   try {
     const { businessId } = await params;
 
-    const business = await db.business.findUnique({
+    const business = await withRetry(() => db.business.findUnique({
       where: { id: businessId },
       include: {
         agents: {
           where: { status: 'active' },
         },
       },
-    });
+    }), 5, 1500);
 
     if (!business) {
       return NextResponse.json({ error: 'Business not found' }, { status: 404 });
@@ -70,6 +70,9 @@ export async function GET(
     });
   } catch (error) {
     console.error('Barista GET error:', error);
+    if (isRetryableError(error)) {
+      return NextResponse.json({ error: 'Database connection error. Please try again.', retryable: true }, { status: 503 });
+    }
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
   }
 }
@@ -87,14 +90,14 @@ export async function POST(
       return NextResponse.json({ error: 'message is required' }, { status: 400 });
     }
 
-    const business = await db.business.findUnique({
+    const business = await withRetry(() => db.business.findUnique({
       where: { id: businessId },
       include: {
         agents: {
           where: { status: 'active' },
         },
       },
-    });
+    }), 5, 1500);
 
     if (!business) {
       return NextResponse.json({ error: 'Business not found' }, { status: 404 });
@@ -136,24 +139,24 @@ export async function POST(
     }
 
     // Save user message as conversation
-    await db.conversation.create({
+    await withRetry(() => db.conversation.create({
       data: {
         businessId,
         agentId: baristaAgent?.id || null,
         role: 'user',
         content: message,
       },
-    });
+    }), 5, 1500);
 
     // Get recent conversation history for this session (last 8 messages)
-    const history = await db.conversation.findMany({
+    const history = await withRetry(() => db.conversation.findMany({
       where: {
         businessId,
         ...(baristaAgent?.id ? { agentId: baristaAgent.id } : {}),
       },
       orderBy: { createdAt: 'desc' },
       take: 8,
-    });
+    }), 5, 1500);
     history.reverse();
 
     // Build messages for AI
@@ -207,7 +210,7 @@ export async function POST(
     if (leadMatch) {
       const leadName = leadMatch[1];
       const leadPhone = leadMatch[2];
-      const newLead = await db.lead.create({
+      const newLead = await withRetry(() => db.lead.create({
         data: {
           businessId,
           customerName: leadName,
@@ -215,25 +218,28 @@ export async function POST(
           intent: message,
           source: 'barista',
         },
-      });
+      }), 5, 1500);
       aiResponse = aiResponse.replace(leadRegex, '').trim();
       // Fire workflow trigger for new lead
       WorkflowEngine.fireTrigger('new_lead', businessId, { leadId: newLead.id, name: leadName, phone: leadPhone }).catch(() => {});
     }
 
     // Save AI response
-    await db.conversation.create({
+    await withRetry(() => db.conversation.create({
       data: {
         businessId,
         agentId: baristaAgent?.id || null,
         role: 'assistant',
         content: aiResponse,
       },
-    });
+    }), 5, 1500);
 
     return NextResponse.json({ response: aiResponse, sessionId, order: orderInfo });
   } catch (error) {
     console.error('Barista chat error:', error);
+    if (isRetryableError(error)) {
+      return NextResponse.json({ error: 'Database connection error. Please try again.', retryable: true }, { status: 503 });
+    }
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
   }
 }

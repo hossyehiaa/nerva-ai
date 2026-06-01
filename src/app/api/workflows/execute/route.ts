@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { jwtVerify } from 'jose';
-import { db } from '@/lib/db';
+import { db, withRetry, isRetryableError } from '@/lib/db';
 import { WorkflowEngine } from '@/lib/workflow-engine';
 
 const JWT_SECRET = new TextEncoder().encode(
@@ -28,18 +28,26 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'workflowId is required' }, { status: 400 });
   }
 
-  const workflow = await db.workflow.findUnique({ where: { id: workflowId } });
-  if (!workflow) {
-    return NextResponse.json({ error: 'Workflow not found' }, { status: 404 });
+  try {
+    const workflow = await withRetry(() => db.workflow.findUnique({ where: { id: workflowId } }), 5, 1500);
+    if (!workflow) {
+      return NextResponse.json({ error: 'Workflow not found' }, { status: 404 });
+    }
+
+    // Verify ownership
+    const business = await withRetry(() => db.business.findUnique({ where: { id: workflow.businessId } }), 5, 1500);
+    if (!business || business.userId !== user.id) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+
+    const results = await WorkflowEngine.executeWorkflow(workflowId, { trigger: 'manual' });
+
+    return NextResponse.json({ success: true, results });
+  } catch (error) {
+    console.error('Workflow execute error:', error);
+    if (isRetryableError(error)) {
+      return NextResponse.json({ error: 'Database connection error. Please try again.', retryable: true }, { status: 503 });
+    }
+    return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
   }
-
-  // Verify ownership
-  const business = await db.business.findUnique({ where: { id: workflow.businessId } });
-  if (!business || business.userId !== user.id) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-  }
-
-  const results = await WorkflowEngine.executeWorkflow(workflowId, { trigger: 'manual' });
-
-  return NextResponse.json({ success: true, results });
 }

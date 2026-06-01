@@ -196,13 +196,29 @@ export default function DashboardPage({ onNavigate }: DashboardPageProps) {
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState('');
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const [retrying, setRetrying] = useState(false);
+  const autoRetryRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  const loadBusiness = useCallback(async (retries = 3) => {
+  const loadBusiness = useCallback(async (retries = 5) => {
     setLoadError('');
     setLoading(true);
+    setRetrying(false);
+
+    // First, warm up the database
+    try {
+      await fetch('/api/db/warmup');
+    } catch {
+      // Ignore warmup errors, we'll still try the actual request
+    }
+
     for (let attempt = 0; attempt < retries; attempt++) {
       try {
-        const res = await fetch('/api/business');
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 15000); // 15s timeout per attempt
+
+        const res = await fetch('/api/business', { signal: controller.signal });
+        clearTimeout(timeoutId);
+
         if (res.ok) {
           const businesses = await res.json();
           if (businesses.length > 0) {
@@ -224,18 +240,27 @@ export default function DashboardPage({ onNavigate }: DashboardPageProps) {
       } catch (err) {
         console.error(`loadBusiness attempt ${attempt + 1} failed:`, err);
       }
-      // Wait before retrying (for Neon cold starts)
+      // Wait before retrying (for Neon cold starts) — longer delays
       if (attempt < retries - 1) {
-        await new Promise(resolve => setTimeout(resolve, 2000 * (attempt + 1)));
+        await new Promise(resolve => setTimeout(resolve, 3000 * (attempt + 1)));
       }
     }
-    // All retries failed
+    // All retries failed — set error and auto-retry in 10 seconds
     setLoadError('Could not load your business data. The database may be waking up.');
     setLoading(false);
+
+    // Auto-retry after 10 seconds
+    autoRetryRef.current = setTimeout(() => {
+      setRetrying(true);
+      loadBusiness(3);
+    }, 10000);
   }, [refreshUser]);
 
   useEffect(() => {
     loadBusiness();
+    return () => {
+      if (autoRetryRef.current) clearTimeout(autoRetryRef.current);
+    };
   }, [loadBusiness]);
 
   const handleLogout = async () => {
@@ -267,12 +292,17 @@ export default function DashboardPage({ onNavigate }: DashboardPageProps) {
               </div>
               <h2 className="text-2xl font-bold mb-2">Loading Error</h2>
               <p className="text-muted-foreground mb-6">{loadError}</p>
+              {retrying && (
+                <p className="text-nerva-cyan text-sm mb-4 flex items-center justify-center gap-2">
+                  <Loader2 className="w-4 h-4 animate-spin" /> Auto-retrying...
+                </p>
+              )}
               <Button
                 onClick={() => loadBusiness()}
                 disabled={loading}
                 className="shine-effect bg-gradient-to-r from-nerva-cyan to-nerva-blue text-nerva-dark font-semibold h-12 rounded-xl px-8"
               >
-                {loading ? <Loader2 className="w-5 h-5 animate-spin" /> : <><RefreshCw className="w-4 h-4 mr-2" /> Retry</>}
+                {loading ? <Loader2 className="w-5 h-5 animate-spin" /> : <><RefreshCw className="w-4 h-4 mr-2" /> Retry Now</>}
               </Button>
             </>
           ) : (

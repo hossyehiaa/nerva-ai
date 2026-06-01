@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { db } from '@/lib/db';
+import { db, withRetry, isRetryableError } from '@/lib/db';
 import bcrypt from 'bcryptjs';
 
 export async function POST(req: NextRequest) {
@@ -13,7 +13,7 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    const existing = await db.user.findUnique({ where: { email } });
+    const existing = await withRetry(() => db.user.findUnique({ where: { email } }), 5, 1500);
     if (existing) {
       return NextResponse.json(
         { error: 'Email already registered' },
@@ -22,9 +22,9 @@ export async function POST(req: NextRequest) {
     }
 
     const passwordHash = await bcrypt.hash(password, 12);
-    const user = await db.user.create({
+    const user = await withRetry(() => db.user.create({
       data: { email, passwordHash, name: name || null },
-    });
+    }), 5, 1500);
 
     return NextResponse.json({
       id: user.id,
@@ -33,6 +33,9 @@ export async function POST(req: NextRequest) {
     }, { status: 201 });
   } catch (error) {
     console.error('Register error:', error);
+    if (isRetryableError(error)) {
+      return NextResponse.json({ error: 'Database connection error. Please try again.', retryable: true }, { status: 503 });
+    }
     return NextResponse.json(
       { error: 'Internal server error' },
       { status: 500 }

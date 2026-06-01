@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { db } from '@/lib/db';
+import { db, withRetry, isRetryableError } from '@/lib/db';
 import bcrypt from 'bcryptjs';
 import { sendPasswordChangedEmail } from '@/lib/email';
 
@@ -22,10 +22,10 @@ export async function POST(req: NextRequest) {
     }
 
     // Find the reset token
-    const resetRecord = await db.passwordReset.findUnique({
+    const resetRecord = await withRetry(() => db.passwordReset.findUnique({
       where: { token },
       include: { user: true },
-    });
+    }), 5, 1500);
 
     if (!resetRecord) {
       return NextResponse.json(
@@ -54,16 +54,16 @@ export async function POST(req: NextRequest) {
     const passwordHash = await bcrypt.hash(password, 10);
 
     // Update the user's password
-    await db.user.update({
+    await withRetry(() => db.user.update({
       where: { id: resetRecord.userId },
       data: { passwordHash },
-    });
+    }), 5, 1500);
 
     // Mark the token as used
-    await db.passwordReset.update({
+    await withRetry(() => db.passwordReset.update({
       where: { id: resetRecord.id },
       data: { used: true },
-    });
+    }), 5, 1500);
 
     // Send confirmation email
     await sendPasswordChangedEmail({
@@ -79,6 +79,9 @@ export async function POST(req: NextRequest) {
     });
   } catch (error) {
     console.error('[ResetPassword] Error:', error);
+    if (isRetryableError(error)) {
+      return NextResponse.json({ error: 'Database connection error. Please try again.', retryable: true }, { status: 503 });
+    }
     return NextResponse.json(
       { error: 'Something went wrong. Please try again.' },
       { status: 500 }
@@ -95,9 +98,9 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({ valid: false, error: 'Missing token' }, { status: 400 });
     }
 
-    const resetRecord = await db.passwordReset.findUnique({
+    const resetRecord = await withRetry(() => db.passwordReset.findUnique({
       where: { token },
-    });
+    }), 5, 1500);
 
     if (!resetRecord || resetRecord.used || resetRecord.expiresAt < new Date()) {
       return NextResponse.json({ valid: false, error: 'Invalid or expired token' });
@@ -106,6 +109,9 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ valid: true });
   } catch (error) {
     console.error('[ResetPassword] Token verification error:', error);
+    if (isRetryableError(error)) {
+      return NextResponse.json({ valid: false, error: 'Database connection error. Please try again.', retryable: true }, { status: 503 });
+    }
     return NextResponse.json({ valid: false, error: 'Server error' }, { status: 500 });
   }
 }

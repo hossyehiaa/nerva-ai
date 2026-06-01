@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { jwtVerify } from 'jose';
-import { db } from '@/lib/db';
+import { db, withRetry, isRetryableError } from '@/lib/db';
 
 const JWT_SECRET = new TextEncoder().encode(
   process.env.JWT_SECRET || 'nerva-ai-secret-key-change-in-production'
@@ -30,21 +30,29 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: 'businessId required' }, { status: 400 });
   }
 
-  const business = await db.business.findUnique({ where: { id: businessId } });
-  if (!business || business.userId !== user.id) {
-    return NextResponse.json({ error: 'Not found' }, { status: 404 });
+  try {
+    const business = await withRetry(() => db.business.findUnique({ where: { id: businessId } }), 5, 1500);
+    if (!business || business.userId !== user.id) {
+      return NextResponse.json({ error: 'Not found' }, { status: 404 });
+    }
+
+    const filter: Record<string, unknown> = { businessId };
+    if (agentId) filter.agentId = agentId;
+
+    const conversations = await withRetry(() => db.conversation.findMany({
+      where: filter,
+      orderBy: { createdAt: 'asc' },
+      take: 50,
+    }), 5, 1500);
+
+    return NextResponse.json(conversations);
+  } catch (error) {
+    console.error('Conversations GET error:', error);
+    if (isRetryableError(error)) {
+      return NextResponse.json({ error: 'Database connection error. Please try again.', retryable: true }, { status: 503 });
+    }
+    return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
   }
-
-  const filter: Record<string, unknown> = { businessId };
-  if (agentId) filter.agentId = agentId;
-
-  const conversations = await db.conversation.findMany({
-    where: filter,
-    orderBy: { createdAt: 'asc' },
-    take: 50,
-  });
-
-  return NextResponse.json(conversations);
 }
 
 // DELETE - Clear conversation history
@@ -60,15 +68,23 @@ export async function DELETE(req: NextRequest) {
     return NextResponse.json({ error: 'businessId required' }, { status: 400 });
   }
 
-  const business = await db.business.findUnique({ where: { id: businessId } });
-  if (!business || business.userId !== user.id) {
-    return NextResponse.json({ error: 'Not found' }, { status: 404 });
+  try {
+    const business = await withRetry(() => db.business.findUnique({ where: { id: businessId } }), 5, 1500);
+    if (!business || business.userId !== user.id) {
+      return NextResponse.json({ error: 'Not found' }, { status: 404 });
+    }
+
+    const filter: Record<string, unknown> = { businessId };
+    if (agentId) filter.agentId = agentId;
+
+    await withRetry(() => db.conversation.deleteMany({ where: filter }), 5, 1500);
+
+    return NextResponse.json({ success: true });
+  } catch (error) {
+    console.error('Conversations DELETE error:', error);
+    if (isRetryableError(error)) {
+      return NextResponse.json({ error: 'Database connection error. Please try again.', retryable: true }, { status: 503 });
+    }
+    return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
   }
-
-  const filter: Record<string, unknown> = { businessId };
-  if (agentId) filter.agentId = agentId;
-
-  await db.conversation.deleteMany({ where: filter });
-
-  return NextResponse.json({ success: true });
 }

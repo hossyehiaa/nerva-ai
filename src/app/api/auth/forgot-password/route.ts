@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { db } from '@/lib/db';
+import { db, withRetry, isRetryableError } from '@/lib/db';
 import { sendPasswordResetEmail } from '@/lib/email';
 import crypto from 'crypto';
 
@@ -17,9 +17,9 @@ export async function POST(req: NextRequest) {
     const normalizedEmail = email.trim().toLowerCase();
 
     // Find user by email
-    const user = await db.user.findUnique({
+    const user = await withRetry(() => db.user.findUnique({
       where: { email: normalizedEmail },
-    });
+    }), 5, 1500);
 
     // Always return success to prevent email enumeration attacks
     // (don't reveal whether an email exists in our system)
@@ -32,27 +32,27 @@ export async function POST(req: NextRequest) {
     }
 
     // Invalidate any existing reset tokens for this user
-    await db.passwordReset.updateMany({
+    await withRetry(() => db.passwordReset.updateMany({
       where: {
         userId: user.id,
         used: false,
         expiresAt: { gt: new Date() },
       },
       data: { used: true },
-    });
+    }), 5, 1500);
 
     // Generate a secure random token
     const token = crypto.randomBytes(32).toString('hex');
     const expiresAt = new Date(Date.now() + 60 * 60 * 1000); // 1 hour
 
     // Save token to database
-    await db.passwordReset.create({
+    await withRetry(() => db.passwordReset.create({
       data: {
         userId: user.id,
         token,
         expiresAt,
       },
-    });
+    }), 5, 1500);
 
     // Build the reset URL
     const baseUrl = process.env.NEXT_PUBLIC_APP_URL ||
@@ -82,6 +82,9 @@ export async function POST(req: NextRequest) {
     });
   } catch (error) {
     console.error('[ForgotPassword] Error:', error);
+    if (isRetryableError(error)) {
+      return NextResponse.json({ error: 'Database connection error. Please try again.', retryable: true }, { status: 503 });
+    }
     return NextResponse.json(
       { error: 'Something went wrong. Please try again.' },
       { status: 500 }

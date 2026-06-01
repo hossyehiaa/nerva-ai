@@ -62,13 +62,28 @@ export async function GET(req: NextRequest) {
       where: { userId: user.id as string },
       include: { agents: true, _count: { select: { leads: true, knowledgeDocs: true, workflows: true } } },
       orderBy: { createdAt: 'desc' },
-    }));
+    }), 5, 1500); // 5 retries with 1.5s base delay for Neon cold starts
 
     return NextResponse.json(businesses);
   } catch (error) {
     console.error('[Business GET] Error:', error);
+    const errorMsg = error instanceof Error ? error.message : String(error);
+    const isConnectionError =
+      errorMsg.includes('Connection') ||
+      errorMsg.includes('timeout') ||
+      errorMsg.includes('P1001') ||
+      errorMsg.includes('P1008') ||
+      errorMsg.includes('P1017') ||
+      errorMsg.includes('ECONNRESET');
+
+    if (isConnectionError) {
+      return NextResponse.json(
+        { error: 'Database is waking up. Please try again in a few seconds.', retryable: true },
+        { status: 503 }
+      );
+    }
     return NextResponse.json(
-      { error: 'Failed to load businesses. The database may be waking up — please try again.' },
+      { error: 'Failed to load businesses. Please try again.' },
       { status: 500 }
     );
   }
@@ -96,7 +111,7 @@ export async function POST(req: NextRequest) {
         contextData: contextData || '',
         systemPrompt,
       },
-    }));
+    }), 5, 1500);
 
     // Auto-create a WhatsApp agent with its own system prompt
     const agentSystemPrompt = getAgentSystemPrompt('whatsapp', name, contextData || '');
@@ -109,7 +124,7 @@ export async function POST(req: NextRequest) {
         config: JSON.stringify({ model: 'llama-3.3-70b-versatile' }),
         systemPrompt: agentSystemPrompt,
       },
-    }));
+    }), 5, 1500);
 
     return NextResponse.json(business, { status: 201 });
   } catch (error) {
@@ -117,7 +132,7 @@ export async function POST(req: NextRequest) {
     const errorMsg = error instanceof Error ? error.message : String(error);
     if (errorMsg.includes('Connection') || errorMsg.includes('timeout') || errorMsg.includes('P1001') || errorMsg.includes('P1008')) {
       return NextResponse.json(
-        { error: 'Database is waking up. Please try again in a few seconds.' },
+        { error: 'Database is waking up. Please try again in a few seconds.', retryable: true },
         { status: 503 }
       );
     }
@@ -136,7 +151,7 @@ export async function PUT(req: NextRequest) {
 
     const { id, name, industry, contextData, whatsappNumber, whatsappInstance } = await req.json();
 
-    const business = await withRetry(() => db.business.findUnique({ where: { id } }));
+    const business = await withRetry(() => db.business.findUnique({ where: { id } }), 5, 1500);
     if (!business || business.userId !== user.id) {
       return NextResponse.json({ error: 'Not found' }, { status: 404 });
     }
@@ -161,11 +176,18 @@ export async function PUT(req: NextRequest) {
         ...(whatsappInstance !== undefined && { whatsappInstance }),
         ...(promptChanged && { systemPrompt }),
       },
-    }));
+    }), 5, 1500);
 
     return NextResponse.json(updated);
   } catch (error) {
     console.error('[Business PUT] Error:', error);
+    const errorMsg = error instanceof Error ? error.message : String(error);
+    if (errorMsg.includes('Connection') || errorMsg.includes('timeout') || errorMsg.includes('P1001') || errorMsg.includes('P1008')) {
+      return NextResponse.json(
+        { error: 'Database is waking up. Please try again in a few seconds.', retryable: true },
+        { status: 503 }
+      );
+    }
     return NextResponse.json(
       { error: 'Failed to update business. Please try again.' },
       { status: 500 }
@@ -184,12 +206,12 @@ export async function DELETE(req: NextRequest) {
 
     if (!id) return NextResponse.json({ error: 'ID required' }, { status: 400 });
 
-    const business = await withRetry(() => db.business.findUnique({ where: { id } }));
+    const business = await withRetry(() => db.business.findUnique({ where: { id } }), 5, 1500);
     if (!business || business.userId !== user.id) {
       return NextResponse.json({ error: 'Not found' }, { status: 404 });
     }
 
-    await withRetry(() => db.business.delete({ where: { id } }));
+    await withRetry(() => db.business.delete({ where: { id } }), 5, 1500);
     return NextResponse.json({ success: true });
   } catch (error) {
     console.error('[Business DELETE] Error:', error);

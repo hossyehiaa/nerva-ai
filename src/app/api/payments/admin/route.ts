@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { jwtVerify } from 'jose';
-import { db } from '@/lib/db';
+import { db, withRetry, isRetryableError } from '@/lib/db';
 
 const JWT_SECRET = new TextEncoder().encode(
   process.env.JWT_SECRET || 'nerva-ai-secret-key-change-in-production'
@@ -33,17 +33,25 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: 'Admin access required' }, { status: 403 });
   }
 
-  const payments = await db.payment.findMany({
-    where: { status: 'pending' },
-    include: {
-      user: {
-        select: { email: true, name: true },
+  try {
+    const payments = await withRetry(() => db.payment.findMany({
+      where: { status: 'pending' },
+      include: {
+        user: {
+          select: { email: true, name: true },
+        },
       },
-    },
-    orderBy: { createdAt: 'desc' },
-  });
+      orderBy: { createdAt: 'desc' },
+    }), 5, 1500);
 
-  return NextResponse.json(payments);
+    return NextResponse.json(payments);
+  } catch (error) {
+    console.error('Admin payments GET error:', error);
+    if (isRetryableError(error)) {
+      return NextResponse.json({ error: 'Database connection error. Please try again.', retryable: true }, { status: 503 });
+    }
+    return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
+  }
 }
 
 // PUT - Approve or reject a payment (admin only)
@@ -71,63 +79,71 @@ export async function PUT(req: NextRequest) {
     );
   }
 
-  const payment = await db.payment.findUnique({ where: { id: paymentId } });
-  if (!payment) {
-    return NextResponse.json({ error: 'Payment not found' }, { status: 404 });
-  }
-
-  if (payment.status !== 'pending') {
-    return NextResponse.json(
-      { error: 'Payment has already been processed' },
-      { status: 400 }
-    );
-  }
-
-  if (action === 'approve') {
-    // Update payment status
-    const updatedPayment = await db.payment.update({
-      where: { id: paymentId },
-      data: {
-        status: 'approved',
-        adminNote: adminNote || null,
-      },
-    });
-
-    // Update the associated business if businessId exists
-    if (payment.businessId) {
-      const limits = planLimits[payment.plan] || planLimits.free;
-      await db.business.update({
-        where: { id: payment.businessId },
-        data: {
-          subscriptionStatus: payment.plan,
-          agentLimit: limits.agents,
-          leadLimit: limits.leads,
-        },
-      });
-
-      // Create a subscription record
-      await db.subscription.create({
-        data: {
-          userId: payment.userId,
-          plan: payment.plan,
-          status: 'active',
-          startDate: new Date(),
-          endDate: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000), // 30 days
-        },
-      });
+  try {
+    const payment = await withRetry(() => db.payment.findUnique({ where: { id: paymentId } }), 5, 1500);
+    if (!payment) {
+      return NextResponse.json({ error: 'Payment not found' }, { status: 404 });
     }
 
+    if (payment.status !== 'pending') {
+      return NextResponse.json(
+        { error: 'Payment has already been processed' },
+        { status: 400 }
+      );
+    }
+
+    if (action === 'approve') {
+      // Update payment status
+      const updatedPayment = await withRetry(() => db.payment.update({
+        where: { id: paymentId },
+        data: {
+          status: 'approved',
+          adminNote: adminNote || null,
+        },
+      }), 5, 1500);
+
+      // Update the associated business if businessId exists
+      if (payment.businessId) {
+        const limits = planLimits[payment.plan] || planLimits.free;
+        await withRetry(() => db.business.update({
+          where: { id: payment.businessId! },
+          data: {
+            subscriptionStatus: payment.plan,
+            agentLimit: limits.agents,
+            leadLimit: limits.leads,
+          },
+        }), 5, 1500);
+
+        // Create a subscription record
+        await withRetry(() => db.subscription.create({
+          data: {
+            userId: payment.userId,
+            plan: payment.plan,
+            status: 'active',
+            startDate: new Date(),
+            endDate: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000), // 30 days
+          },
+        }), 5, 1500);
+      }
+
+      return NextResponse.json(updatedPayment);
+    }
+
+    // Reject
+    const updatedPayment = await withRetry(() => db.payment.update({
+      where: { id: paymentId },
+      data: {
+        status: 'rejected',
+        adminNote: adminNote || null,
+      },
+    }), 5, 1500);
+
     return NextResponse.json(updatedPayment);
+  } catch (error) {
+    console.error('Admin payments PUT error:', error);
+    if (isRetryableError(error)) {
+      return NextResponse.json({ error: 'Database connection error. Please try again.', retryable: true }, { status: 503 });
+    }
+    return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
   }
-
-  // Reject
-  const updatedPayment = await db.payment.update({
-    where: { id: paymentId },
-    data: {
-      status: 'rejected',
-      adminNote: adminNote || null,
-    },
-  });
-
-  return NextResponse.json(updatedPayment);
 }

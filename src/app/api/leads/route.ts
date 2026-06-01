@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { jwtVerify } from 'jose';
-import { db } from '@/lib/db';
+import { db, withRetry, isRetryableError } from '@/lib/db';
 
 const JWT_SECRET = new TextEncoder().encode(
   process.env.JWT_SECRET || 'nerva-ai-secret-key-change-in-production'
@@ -29,17 +29,25 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: 'businessId required' }, { status: 400 });
   }
 
-  const business = await db.business.findUnique({ where: { id: businessId } });
-  if (!business || business.userId !== user.id) {
-    return NextResponse.json({ error: 'Not found' }, { status: 404 });
+  try {
+    const business = await withRetry(() => db.business.findUnique({ where: { id: businessId } }), 5, 1500);
+    if (!business || business.userId !== user.id) {
+      return NextResponse.json({ error: 'Not found' }, { status: 404 });
+    }
+
+    const leads = await withRetry(() => db.lead.findMany({
+      where: { businessId },
+      orderBy: { createdAt: 'desc' },
+    }), 5, 1500);
+
+    return NextResponse.json(leads);
+  } catch (error) {
+    console.error('Leads GET error:', error);
+    if (isRetryableError(error)) {
+      return NextResponse.json({ error: 'Database connection error. Please try again.', retryable: true }, { status: 503 });
+    }
+    return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
   }
-
-  const leads = await db.lead.findMany({
-    where: { businessId },
-    orderBy: { createdAt: 'desc' },
-  });
-
-  return NextResponse.json(leads);
 }
 
 // PUT - Update lead status
@@ -61,20 +69,28 @@ export async function PUT(req: NextRequest) {
     );
   }
 
-  const lead = await db.lead.findUnique({ where: { id } });
-  if (!lead) return NextResponse.json({ error: 'Not found' }, { status: 404 });
+  try {
+    const lead = await withRetry(() => db.lead.findUnique({ where: { id } }), 5, 1500);
+    if (!lead) return NextResponse.json({ error: 'Not found' }, { status: 404 });
 
-  const business = await db.business.findUnique({ where: { id: lead.businessId } });
-  if (!business || business.userId !== user.id) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    const business = await withRetry(() => db.business.findUnique({ where: { id: lead.businessId } }), 5, 1500);
+    if (!business || business.userId !== user.id) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+
+    const updated = await withRetry(() => db.lead.update({
+      where: { id },
+      data: { status },
+    }), 5, 1500);
+
+    return NextResponse.json(updated);
+  } catch (error) {
+    console.error('Leads PUT error:', error);
+    if (isRetryableError(error)) {
+      return NextResponse.json({ error: 'Database connection error. Please try again.', retryable: true }, { status: 503 });
+    }
+    return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
   }
-
-  const updated = await db.lead.update({
-    where: { id },
-    data: { status },
-  });
-
-  return NextResponse.json(updated);
 }
 
 // DELETE - Delete a lead
@@ -87,14 +103,22 @@ export async function DELETE(req: NextRequest) {
 
   if (!id) return NextResponse.json({ error: 'ID required' }, { status: 400 });
 
-  const lead = await db.lead.findUnique({ where: { id } });
-  if (!lead) return NextResponse.json({ error: 'Not found' }, { status: 404 });
+  try {
+    const lead = await withRetry(() => db.lead.findUnique({ where: { id } }), 5, 1500);
+    if (!lead) return NextResponse.json({ error: 'Not found' }, { status: 404 });
 
-  const business = await db.business.findUnique({ where: { id: lead.businessId } });
-  if (!business || business.userId !== user.id) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    const business = await withRetry(() => db.business.findUnique({ where: { id: lead.businessId } }), 5, 1500);
+    if (!business || business.userId !== user.id) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+
+    await withRetry(() => db.lead.delete({ where: { id } }), 5, 1500);
+    return NextResponse.json({ success: true });
+  } catch (error) {
+    console.error('Leads DELETE error:', error);
+    if (isRetryableError(error)) {
+      return NextResponse.json({ error: 'Database connection error. Please try again.', retryable: true }, { status: 503 });
+    }
+    return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
   }
-
-  await db.lead.delete({ where: { id } });
-  return NextResponse.json({ success: true });
 }

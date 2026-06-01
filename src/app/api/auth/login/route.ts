@@ -38,6 +38,7 @@ export async function POST(req: NextRequest) {
     const token = await new SignJWT({
       id: user.id,
       email: user.email,
+      name: user.name || '',
       role: user.role,
     })
       .setProtectedHeader({ alg: 'HS256' })

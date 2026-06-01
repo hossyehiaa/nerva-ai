@@ -53,6 +53,9 @@ export default function OnboardingPage({ onComplete }: OnboardingPageProps) {
     setLoading(true);
     setCreateError('');
     try {
+      // First warm up the database
+      try { await fetch('/api/db/warmup'); } catch {}
+
       const res = await fetch('/api/business', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },

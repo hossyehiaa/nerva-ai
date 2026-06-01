@@ -23,6 +23,11 @@ function AppRouter() {
   // This prevents the redirect from being overridden by state changes
   const redirectedRef = useRef(false);
 
+  // Warm up the database on first page load to reduce cold start latency
+  useEffect(() => {
+    fetch('/api/db/warmup').catch(() => {});
+  }, []);
+
   // If loading takes too long (e.g., cold start), show the landing page anyway
   useEffect(() => {
     if (loading) {
