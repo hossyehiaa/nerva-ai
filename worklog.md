@@ -156,3 +156,29 @@ Stage Summary:
 - Deployed to https://nerva-ai.vercel.app
 - Login → Dashboard redirect should now work reliably even with Neon cold starts
 - User session is protected from being nullified by temporary DB/network issues
+
+---
+Task ID: 2
+Agent: Main Agent
+Task: Fix database issues - existing business not loading, new business not saving
+
+Work Log:
+- Verified database has data: user bhgreecr@gmail.com has business "nevox" with WhatsApp agent
+- Screenshot showed "Set Up Your Business" page even though business exists in DB
+- Root cause: /api/business endpoints had no withRetry, no error handling, no try-catch
+- Also: OnboardingPage silently swallowed errors on business creation failure
+- Also: DashboardPage showed "Create Business" with no error indication when API failed
+
+Fixes Applied:
+1. /api/business GET: Added withRetry for DB query, added try-catch with error response
+2. /api/business POST: Added withRetry for business + agent creation, added proper error handling with 503 for cold starts
+3. /api/business PUT/DELETE: Added withRetry and try-catch
+4. DashboardPage: Added loadError state, retry button when business load fails, useCallback for loadBusiness
+5. OnboardingPage: Added createError state + AlertCircle display when business creation fails
+6. Added AlertCircle import to OnboardingPage
+
+Stage Summary:
+- Deployed to https://nerva-ai.vercel.app
+- Existing businesses should now load reliably even with Neon cold starts
+- New business creation now shows errors instead of silently failing
+- Dashboard shows "Loading Error" + Retry button instead of misleading "Set Up Your Business"

@@ -189,18 +189,17 @@ interface DashboardPageProps {
 }
 
 export default function DashboardPage({ onNavigate }: DashboardPageProps) {
-  const { user, logout } = useAuth();
+  const { user, logout, refreshUser } = useAuth();
   const { toast } = useToast();
   const [business, setBusiness] = useState<Business | null>(null);
   const [page, setPage] = useState<Page>('overview');
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState('');
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
-  useEffect(() => {
-    loadBusiness().finally(() => setLoading(false));
-  }, []);
-
-  const loadBusiness = async (retries = 3) => {
+  const loadBusiness = useCallback(async (retries = 3) => {
+    setLoadError('');
+    setLoading(true);
     for (let attempt = 0; attempt < retries; attempt++) {
       try {
         const res = await fetch('/api/business');
@@ -209,20 +208,35 @@ export default function DashboardPage({ onNavigate }: DashboardPageProps) {
           if (businesses.length > 0) {
             setBusiness(businesses[0]);
           }
+          setLoading(false);
           return; // Success
         }
         if (res.status === 401) {
-          return; // Auth error, don't retry
+          // Auth error — try refreshing user first
+          await refreshUser();
+          setLoadError('Session expired. Please sign in again.');
+          setLoading(false);
+          return;
         }
+        // Server error (503, 500, etc.) — retry
+        const data = await res.json().catch(() => ({}));
+        console.warn(`loadBusiness attempt ${attempt + 1} got ${res.status}:`, data.error);
       } catch (err) {
         console.error(`loadBusiness attempt ${attempt + 1} failed:`, err);
       }
       // Wait before retrying (for Neon cold starts)
       if (attempt < retries - 1) {
-        await new Promise(resolve => setTimeout(resolve, 1500 * (attempt + 1)));
+        await new Promise(resolve => setTimeout(resolve, 2000 * (attempt + 1)));
       }
     }
-  };
+    // All retries failed
+    setLoadError('Could not load your business data. The database may be waking up.');
+    setLoading(false);
+  }, [refreshUser]);
+
+  useEffect(() => {
+    loadBusiness();
+  }, [loadBusiness]);
 
   const handleLogout = async () => {
     await logout();
@@ -246,17 +260,36 @@ export default function DashboardPage({ onNavigate }: DashboardPageProps) {
       <div className="min-h-screen bg-nerva-dark flex items-center justify-center px-4">
         <div className="absolute inset-0 grid-bg opacity-30" />
         <div className="relative z-10 text-center glass-card rounded-2xl p-10 max-w-md">
-          <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-nerva-cyan to-nerva-blue flex items-center justify-center mx-auto mb-6 glow-cyan">
-            <Plus className="w-8 h-8 text-nerva-dark" />
-          </div>
-          <h2 className="text-2xl font-bold mb-2">Set Up Your Business</h2>
-          <p className="text-muted-foreground mb-6">Create your first business to start building AI agents.</p>
-          <Button
-            onClick={() => onNavigate('onboarding')}
-            className="shine-effect bg-gradient-to-r from-nerva-cyan to-nerva-blue text-nerva-dark font-semibold h-12 rounded-xl px-8"
-          >
-            <Plus className="w-4 h-4 mr-2" /> Create Business
-          </Button>
+          {loadError ? (
+            <>
+              <div className="w-16 h-16 rounded-2xl bg-amber-500/10 flex items-center justify-center mx-auto mb-6">
+                <AlertTriangle className="w-8 h-8 text-amber-400" />
+              </div>
+              <h2 className="text-2xl font-bold mb-2">Loading Error</h2>
+              <p className="text-muted-foreground mb-6">{loadError}</p>
+              <Button
+                onClick={() => loadBusiness()}
+                disabled={loading}
+                className="shine-effect bg-gradient-to-r from-nerva-cyan to-nerva-blue text-nerva-dark font-semibold h-12 rounded-xl px-8"
+              >
+                {loading ? <Loader2 className="w-5 h-5 animate-spin" /> : <><RefreshCw className="w-4 h-4 mr-2" /> Retry</>}
+              </Button>
+            </>
+          ) : (
+            <>
+              <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-nerva-cyan to-nerva-blue flex items-center justify-center mx-auto mb-6 glow-cyan">
+                <Plus className="w-8 h-8 text-nerva-dark" />
+              </div>
+              <h2 className="text-2xl font-bold mb-2">Set Up Your Business</h2>
+              <p className="text-muted-foreground mb-6">Create your first business to start building AI agents.</p>
+              <Button
+                onClick={() => onNavigate('onboarding')}
+                className="shine-effect bg-gradient-to-r from-nerva-cyan to-nerva-blue text-nerva-dark font-semibold h-12 rounded-xl px-8"
+              >
+                <Plus className="w-4 h-4 mr-2" /> Create Business
+              </Button>
+            </>
+          )}
           <div className="flex items-center justify-center gap-4 mt-6">
             <Button
               variant="ghost"

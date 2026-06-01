@@ -4,7 +4,7 @@ import { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Zap, ArrowRight, ArrowLeft, Building2, Store, Dumbbell, Briefcase, Loader2, CheckCircle2, Send, Bot, Sparkles } from 'lucide-react';
+import { Zap, ArrowRight, ArrowLeft, Building2, Store, Dumbbell, Briefcase, Loader2, CheckCircle2, Send, Bot, Sparkles, AlertCircle } from 'lucide-react';
 
 interface OnboardingPageProps {
   onComplete: () => void;
@@ -38,6 +38,7 @@ export default function OnboardingPage({ onComplete }: OnboardingPageProps) {
   const [contextData, setContextData] = useState('');
   const [businessId, setBusinessId] = useState('');
   const [created, setCreated] = useState(false);
+  const [createError, setCreateError] = useState('');
 
   // Step 4 states
   const [buildProgress, setBuildProgress] = useState(0);
@@ -50,6 +51,7 @@ export default function OnboardingPage({ onComplete }: OnboardingPageProps) {
   const handleCreate = async () => {
     if (!businessName || !industry) return;
     setLoading(true);
+    setCreateError('');
     try {
       const res = await fetch('/api/business', {
         method: 'POST',
@@ -60,9 +62,13 @@ export default function OnboardingPage({ onComplete }: OnboardingPageProps) {
         const data = await res.json();
         setBusinessId(data.id);
         setStep(4);
+      } else {
+        const data = await res.json().catch(() => ({}));
+        setCreateError(data.error || 'Failed to create business. Please try again.');
       }
     } catch (err) {
       console.error(err);
+      setCreateError('Network error. Please check your connection and try again.');
     } finally {
       setLoading(false);
     }
@@ -281,6 +287,12 @@ export default function OnboardingPage({ onComplete }: OnboardingPageProps) {
                   )}
                 </Button>
               </div>
+              {createError && (
+                <div className="mt-4 p-3 rounded-lg bg-red-500/10 border border-red-500/20 text-red-400 text-sm flex items-start gap-2">
+                  <AlertCircle className="w-4 h-4 flex-shrink-0 mt-0.5" />
+                  <span>{createError}</span>
+                </div>
+              )}
               <div className="flex items-center justify-center gap-4 mt-4 text-xs text-muted-foreground">
                 <span className="flex items-center gap-1"><CheckCircle2 className="w-3 h-3 text-nerva-green" /> Secure & Private</span>
                 <span className="flex items-center gap-1"><CheckCircle2 className="w-3 h-3 text-nerva-cyan" /> 2-min Setup</span>

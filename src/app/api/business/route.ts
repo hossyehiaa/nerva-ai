@@ -54,109 +54,148 @@ function getAgentSystemPrompt(agentType: string, businessName: string, businessC
 
 // GET - List user's businesses
 export async function GET(req: NextRequest) {
-  const user = await getUser(req);
-  if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  try {
+    const user = await getUser(req);
+    if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
-  const businesses = await withRetry(() => db.business.findMany({
-    where: { userId: user.id as string },
-    include: { agents: true, _count: { select: { leads: true, knowledgeDocs: true, workflows: true } } },
-    orderBy: { createdAt: 'desc' },
-  }));
+    const businesses = await withRetry(() => db.business.findMany({
+      where: { userId: user.id as string },
+      include: { agents: true, _count: { select: { leads: true, knowledgeDocs: true, workflows: true } } },
+      orderBy: { createdAt: 'desc' },
+    }));
 
-  return NextResponse.json(businesses);
+    return NextResponse.json(businesses);
+  } catch (error) {
+    console.error('[Business GET] Error:', error);
+    return NextResponse.json(
+      { error: 'Failed to load businesses. The database may be waking up — please try again.' },
+      { status: 500 }
+    );
+  }
 }
 
 // POST - Create a new business (onboarding)
 export async function POST(req: NextRequest) {
-  const user = await getUser(req);
-  if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  try {
+    const user = await getUser(req);
+    if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
-  const { name, industry, contextData } = await req.json();
+    const { name, industry, contextData } = await req.json();
 
-  if (!name || !industry) {
-    return NextResponse.json({ error: 'Name and industry are required' }, { status: 400 });
+    if (!name || !industry) {
+      return NextResponse.json({ error: 'Name and industry are required' }, { status: 400 });
+    }
+
+    const systemPrompt = generateSystemPrompt(name, industry, contextData || '');
+
+    const business = await withRetry(() => db.business.create({
+      data: {
+        userId: user.id as string,
+        name,
+        industry,
+        contextData: contextData || '',
+        systemPrompt,
+      },
+    }));
+
+    // Auto-create a WhatsApp agent with its own system prompt
+    const agentSystemPrompt = getAgentSystemPrompt('whatsapp', name, contextData || '');
+    await withRetry(() => db.agent.create({
+      data: {
+        businessId: business.id,
+        name: `${name} - WhatsApp Agent`,
+        type: 'whatsapp',
+        status: 'active',
+        config: JSON.stringify({ model: 'llama-3.3-70b-versatile' }),
+        systemPrompt: agentSystemPrompt,
+      },
+    }));
+
+    return NextResponse.json(business, { status: 201 });
+  } catch (error) {
+    console.error('[Business POST] Error:', error);
+    const errorMsg = error instanceof Error ? error.message : String(error);
+    if (errorMsg.includes('Connection') || errorMsg.includes('timeout') || errorMsg.includes('P1001') || errorMsg.includes('P1008')) {
+      return NextResponse.json(
+        { error: 'Database is waking up. Please try again in a few seconds.' },
+        { status: 503 }
+      );
+    }
+    return NextResponse.json(
+      { error: 'Failed to create business. Please try again.' },
+      { status: 500 }
+    );
   }
-
-  const systemPrompt = generateSystemPrompt(name, industry, contextData || '');
-
-  const business = await db.business.create({
-    data: {
-      userId: user.id as string,
-      name,
-      industry,
-      contextData: contextData || '',
-      systemPrompt,
-    },
-  });
-
-  // Auto-create a WhatsApp agent with its own system prompt
-  const agentSystemPrompt = getAgentSystemPrompt('whatsapp', name, contextData || '');
-  await db.agent.create({
-    data: {
-      businessId: business.id,
-      name: `${name} - WhatsApp Agent`,
-      type: 'whatsapp',
-      status: 'active',
-      config: JSON.stringify({ model: 'llama-3.3-70b-versatile' }),
-      systemPrompt: agentSystemPrompt,
-    },
-  });
-
-  return NextResponse.json(business, { status: 201 });
 }
 
 // PUT - Update business
 export async function PUT(req: NextRequest) {
-  const user = await getUser(req);
-  if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  try {
+    const user = await getUser(req);
+    if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
-  const { id, name, industry, contextData, whatsappNumber, whatsappInstance } = await req.json();
+    const { id, name, industry, contextData, whatsappNumber, whatsappInstance } = await req.json();
 
-  const business = await db.business.findUnique({ where: { id } });
-  if (!business || business.userId !== user.id) {
-    return NextResponse.json({ error: 'Not found' }, { status: 404 });
+    const business = await withRetry(() => db.business.findUnique({ where: { id } }));
+    if (!business || business.userId !== user.id) {
+      return NextResponse.json({ error: 'Not found' }, { status: 404 });
+    }
+
+    // Only regenerate system prompt if name/industry/contextData changed
+    const promptChanged = name || industry || contextData !== undefined;
+    const systemPrompt = promptChanged
+      ? generateSystemPrompt(
+          name || business.name,
+          industry || business.industry,
+          contextData ?? business.contextData
+        )
+      : business.systemPrompt;
+
+    const updated = await withRetry(() => db.business.update({
+      where: { id },
+      data: {
+        ...(name && { name }),
+        ...(industry && { industry }),
+        ...(contextData !== undefined && { contextData }),
+        ...(whatsappNumber !== undefined && { whatsappNumber }),
+        ...(whatsappInstance !== undefined && { whatsappInstance }),
+        ...(promptChanged && { systemPrompt }),
+      },
+    }));
+
+    return NextResponse.json(updated);
+  } catch (error) {
+    console.error('[Business PUT] Error:', error);
+    return NextResponse.json(
+      { error: 'Failed to update business. Please try again.' },
+      { status: 500 }
+    );
   }
-
-  // Only regenerate system prompt if name/industry/contextData changed
-  const promptChanged = name || industry || contextData !== undefined;
-  const systemPrompt = promptChanged
-    ? generateSystemPrompt(
-        name || business.name,
-        industry || business.industry,
-        contextData ?? business.contextData
-      )
-    : business.systemPrompt;
-
-  const updated = await db.business.update({
-    where: { id },
-    data: {
-      ...(name && { name }),
-      ...(industry && { industry }),
-      ...(contextData !== undefined && { contextData }),
-      ...(whatsappNumber !== undefined && { whatsappNumber }),
-      ...(whatsappInstance !== undefined && { whatsappInstance }),
-      ...(promptChanged && { systemPrompt }),
-    },
-  });
-
-  return NextResponse.json(updated);
 }
 
 // DELETE - Delete business
 export async function DELETE(req: NextRequest) {
-  const user = await getUser(req);
-  if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  try {
+    const user = await getUser(req);
+    if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
-  const { searchParams } = new URL(req.url);
-  const id = searchParams.get('id');
+    const { searchParams } = new URL(req.url);
+    const id = searchParams.get('id');
 
-  if (!id) return NextResponse.json({ error: 'ID required' }, { status: 400 });
+    if (!id) return NextResponse.json({ error: 'ID required' }, { status: 400 });
 
-  const business = await db.business.findUnique({ where: { id } });
-  if (!business || business.userId !== user.id) {
-    return NextResponse.json({ error: 'Not found' }, { status: 404 });
+    const business = await withRetry(() => db.business.findUnique({ where: { id } }));
+    if (!business || business.userId !== user.id) {
+      return NextResponse.json({ error: 'Not found' }, { status: 404 });
+    }
+
+    await withRetry(() => db.business.delete({ where: { id } }));
+    return NextResponse.json({ success: true });
+  } catch (error) {
+    console.error('[Business DELETE] Error:', error);
+    return NextResponse.json(
+      { error: 'Failed to delete business. Please try again.' },
+      { status: 500 }
+    );
   }
-
-  await db.business.delete({ where: { id } });
-  return NextResponse.json({ success: true });
 }
