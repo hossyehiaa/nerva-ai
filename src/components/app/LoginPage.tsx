@@ -8,9 +8,10 @@ import { Zap, Mail, Lock, User, ArrowLeft, Loader2, AlertCircle, CheckCircle2, K
 
 interface LoginPageProps {
   onBack: () => void;
+  onLoginSuccess?: () => void;
 }
 
-export default function LoginPage({ onBack }: LoginPageProps) {
+export default function LoginPage({ onBack, onLoginSuccess }: LoginPageProps) {
   const { login, register } = useAuth();
   const [isRegister, setIsRegister] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -57,8 +58,10 @@ export default function LoginPage({ onBack }: LoginPageProps) {
 
       if (!result.success) {
         setError(result.error || 'Something went wrong. Please try again.');
+      } else if (onLoginSuccess) {
+        // Directly navigate to dashboard on successful login
+        onLoginSuccess();
       }
-      // If success, auth context will update user state and AppRouter will redirect
     } catch {
       setError('An unexpected error occurred. Please try again.');
     } finally {

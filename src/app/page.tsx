@@ -30,6 +30,16 @@ function AppRouter() {
     }
   }, [loading]);
 
+  // Redirect to dashboard after successful login
+  useEffect(() => {
+    if (user && page === 'login') {
+      setPage('dashboard');
+    }
+  }, [user, page]);
+
+  // If user is logged in and on home page, show dashboard option
+  // (but don't auto-redirect from home - let them browse)
+
   if (loading && !loadingTimeout) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-nerva-dark">
@@ -45,8 +55,10 @@ function AppRouter() {
     );
   }
 
-  // If loading timed out, treat as not logged in
-  const effectiveUser = loadingTimeout ? null : user;
+  // Use real user if available, otherwise check loading state
+  // After login, user state is set directly - always use it
+  // During initial load, if timeout happened and no user, treat as not logged in
+  const effectiveUser = user;
 
   // Dashboard page (when user explicitly navigates to it)
   if (page === 'dashboard' && effectiveUser) {
@@ -60,7 +72,7 @@ function AppRouter() {
 
   // Login page
   if (page === 'login') {
-    return <LoginPage onBack={() => setPage('home')} />;
+    return <LoginPage onBack={() => setPage('home')} onLoginSuccess={() => setPage('dashboard')} />;
   }
 
   // Home page (ALWAYS the default - landing page shows for everyone)
