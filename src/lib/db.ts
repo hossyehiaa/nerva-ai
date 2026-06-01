@@ -11,9 +11,11 @@ function createPrismaClient(): PrismaClient {
     console.warn('[DB] Warning: No DATABASE_URL set. API routes will not work.');
   } else {
     // Auto-convert direct connection to pooled connection for better serverless performance
-    // Neon pooled connections use the "-pooler" suffix in the hostname
+    // Neon pooled connections use the "-pooler" suffix after the endpoint ID
+    // Direct:   ep-xxx.region.aws.neon.tech  ->  Pooled: ep-xxx-pooler.region.aws.neon.tech
     if (databaseUrl.includes('.neon.tech') && !databaseUrl.includes('-pooler')) {
-      databaseUrl = databaseUrl.replace(/\.neon\.tech/, '-pooler.neon.tech');
+      // Match: ep-<endpoint-id>.<rest> and insert -pooler after endpoint-id
+      databaseUrl = databaseUrl.replace(/^(postgresql:\/\/[^@]+@ep-[^.]+)(\..+\.neon\.tech)/, '$1-pooler$2');
       console.log('[DB] Using Neon pooled connection for better serverless performance');
     }
   }
