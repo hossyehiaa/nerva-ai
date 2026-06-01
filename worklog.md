@@ -99,3 +99,34 @@ Stage Summary:
 - Uses Resend for email delivery (free tier: 100 emails/day)
 - All endpoints verified working on production
 - User needs to set their own RESEND_API_KEY on Vercel (currently placeholder)
+---
+Task ID: 1
+Agent: Main
+Task: Audit and fix all services for production readiness
+
+Work Log:
+- Conducted comprehensive audit of all 25 API routes and 12 services
+- Found 4 critical issues: missing KnowledgeDoc model, missing Workflow model, missing Lead.status field, missing Business.whatsapp fields
+- Added KnowledgeDoc model to Prisma schema (id, businessId, title, content, category, timestamps)
+- Added Workflow model to Prisma schema (id, businessId, name, description, trigger, triggerConfig, actions, status, lastRunAt, timestamps)
+- Added Lead.status field (default "new", values: new/contacted/qualified/converted/lost)
+- Added Lead.updatedAt field (default now())
+- Added Business.whatsappNumber and Business.whatsappInstance fields
+- Added Business.knowledgeDocs and Business.workflows relations
+- Fixed /api/business PUT handler to process whatsappNumber and whatsappInstance
+- Fixed /api/business GET to include knowledgeDocs and workflows counts
+- Fixed /api/auth/me to include agents, knowledgeDocs counts, workflows counts
+- Fixed workflow engine to actually send emails via Resend (was only logging before)
+- Fixed /api/knowledge/chat to auto-create knowledge agent if missing
+- Fixed payment screenshot size limit from 3MB to 5MB to match frontend
+- Pushed all schema changes to Neon PostgreSQL
+- Deployed to Vercel production at nerva-ai.vercel.app
+
+Stage Summary:
+- All 3 critical schema gaps fixed (KnowledgeDoc, Workflow, Lead.status)
+- Knowledge Base service now works end-to-end (CRUD + AI chat)
+- Workflows service now works end-to-end (CRUD + execute + real email sending)
+- Leads management now supports status updates
+- WhatsApp setup now saves numbers to database
+- Payment screenshots now accept up to 5MB
+- 25 API routes deployed and verified

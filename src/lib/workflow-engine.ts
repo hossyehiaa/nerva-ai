@@ -1,4 +1,8 @@
 import { db } from '@/lib/db';
+import { Resend } from 'resend';
+
+const resend = new Resend(process.env.RESEND_API_KEY);
+const FROM_EMAIL = process.env.EMAIL_FROM || 'Nerva AI <onboarding@resend.dev>';
 
 interface WorkflowAction {
   type: string;
@@ -88,24 +92,62 @@ export class WorkflowEngine {
   }
 
   /**
-   * Send email notification (logs + stores in conversation for now)
+   * Send email notification via Resend
    */
   private static async sendEmailAction(
     businessId: string,
     data: Record<string, unknown>,
     config?: Record<string, unknown>
   ): Promise<Record<string, unknown>> {
-    const business = await db.business.findUnique({ where: { id: businessId } });
+    const business = await db.business.findUnique({
+      where: { id: businessId },
+      include: { user: true },
+    });
     if (!business) return { message: 'Business not found' };
 
-    const recipient = (config?.recipient as string) || business.user?.email || 'owner';
+    const recipient = (config?.recipient as string) || business.user?.email || '';
     const subject = (config?.subject as string) || 'Nerva AI Notification';
     const body = this.interpolateTemplate(
       (config?.body as string) || 'New event triggered: {{trigger}}',
       { ...data, businessName: business.name }
     );
 
-    // Store as conversation record for tracking
+    // Try to send actual email via Resend
+    if (recipient && process.env.RESEND_API_KEY) {
+      try {
+        await resend.emails.send({
+          from: FROM_EMAIL,
+          to: recipient,
+          subject,
+          html: `
+            <!DOCTYPE html>
+            <html>
+            <head><meta charset="utf-8"></head>
+            <body style="margin:0;padding:0;background:#0a0f1c;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;">
+              <table width="100%" cellpadding="0" cellspacing="0" style="background:#0a0f1c;padding:40px 0;">
+                <tr><td align="center">
+                  <table width="480" cellpadding="0" cellspacing="0" style="max-width:480px;">
+                    <tr><td style="background:#111827;border:1px solid #1e293b;border-radius:16px;padding:40px;">
+                      <h2 style="color:#ffffff;font-size:20px;margin:0 0 16px 0;">${subject}</h2>
+                      <p style="color:#94a3b8;font-size:15px;margin:0 0 16px 0;line-height:1.6;">${body}</p>
+                      <p style="color:#475569;font-size:12px;margin:16px 0 0 0;">— Nerva AI Workflow Automation</p>
+                    </td></tr>
+                  </table>
+                </td></tr>
+              </table>
+            </body>
+            </html>
+          `,
+          text: body,
+        });
+
+        console.log(`[Workflow] Email sent to ${recipient}: ${subject}`);
+      } catch (error) {
+        console.error('[Workflow] Email send failed:', error);
+      }
+    }
+
+    // Also store as conversation record for tracking
     await db.conversation.create({
       data: {
         businessId,
@@ -114,7 +156,7 @@ export class WorkflowEngine {
       },
     });
 
-    return { message: `Email notification logged for ${recipient}`, subject, body };
+    return { message: `Email notification sent to ${recipient}`, subject, body };
   }
 
   /**
@@ -125,7 +167,10 @@ export class WorkflowEngine {
     data: Record<string, unknown>,
     config?: Record<string, unknown>
   ): Promise<Record<string, unknown>> {
-    const business = await db.business.findUnique({ where: { id: businessId } });
+    const business = await db.business.findUnique({
+      where: { id: businessId },
+      include: { user: true },
+    });
     if (!business) return { message: 'Business not found' };
 
     const number = (config?.number as string) || business.whatsappNumber || '';

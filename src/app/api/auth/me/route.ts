@@ -16,7 +16,18 @@ export async function GET(req: NextRequest) {
     const { payload } = await jwtVerify(token, JWT_SECRET);
     const user = await db.user.findUnique({
       where: { id: payload.id as string },
-      select: { id: true, email: true, name: true, role: true, businesses: true },
+      select: {
+        id: true,
+        email: true,
+        name: true,
+        role: true,
+        businesses: {
+          include: {
+            agents: true,
+            _count: { select: { leads: true, knowledgeDocs: true, workflows: true } },
+          },
+        },
+      },
     });
 
     if (!user) {

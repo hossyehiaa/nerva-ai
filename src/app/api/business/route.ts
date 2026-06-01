@@ -59,7 +59,7 @@ export async function GET(req: NextRequest) {
 
   const businesses = await db.business.findMany({
     where: { userId: user.id as string },
-    include: { agents: true, _count: { select: { leads: true } } },
+    include: { agents: true, _count: { select: { leads: true, knowledgeDocs: true, workflows: true } } },
     orderBy: { createdAt: 'desc' },
   });
 
@@ -110,18 +110,22 @@ export async function PUT(req: NextRequest) {
   const user = await getUser(req);
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
-  const { id, name, industry, contextData } = await req.json();
+  const { id, name, industry, contextData, whatsappNumber, whatsappInstance } = await req.json();
 
   const business = await db.business.findUnique({ where: { id } });
   if (!business || business.userId !== user.id) {
     return NextResponse.json({ error: 'Not found' }, { status: 404 });
   }
 
-  const systemPrompt = generateSystemPrompt(
-    name || business.name,
-    industry || business.industry,
-    contextData ?? business.contextData
-  );
+  // Only regenerate system prompt if name/industry/contextData changed
+  const promptChanged = name || industry || contextData !== undefined;
+  const systemPrompt = promptChanged
+    ? generateSystemPrompt(
+        name || business.name,
+        industry || business.industry,
+        contextData ?? business.contextData
+      )
+    : business.systemPrompt;
 
   const updated = await db.business.update({
     where: { id },
@@ -129,7 +133,9 @@ export async function PUT(req: NextRequest) {
       ...(name && { name }),
       ...(industry && { industry }),
       ...(contextData !== undefined && { contextData }),
-      systemPrompt,
+      ...(whatsappNumber !== undefined && { whatsappNumber }),
+      ...(whatsappInstance !== undefined && { whatsappInstance }),
+      ...(promptChanged && { systemPrompt }),
     },
   });
 

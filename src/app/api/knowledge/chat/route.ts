@@ -88,10 +88,24 @@ export async function POST(req: NextRequest) {
       });
     }
 
-    // Get recent conversation history for context (last 10 messages)
-    const knowledgeAgent = await db.agent.findFirst({
+    // Get or create knowledge agent for this business
+    let knowledgeAgent = await db.agent.findFirst({
       where: { businessId, type: 'knowledge' },
     });
+
+    if (!knowledgeAgent) {
+      // Auto-create knowledge agent if it doesn't exist
+      knowledgeAgent = await db.agent.create({
+        data: {
+          businessId,
+          name: `${business.name} - Knowledge Base`,
+          type: 'knowledge',
+          status: 'active',
+          config: JSON.stringify({ model: 'llama-3.3-70b-versatile' }),
+          systemPrompt: systemPrompt,
+        },
+      });
+    }
 
     const historyFilter: Record<string, unknown> = { businessId };
     if (knowledgeAgent) {

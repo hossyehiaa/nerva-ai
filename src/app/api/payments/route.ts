@@ -102,11 +102,11 @@ export async function POST(req: NextRequest) {
         );
       }
 
-      // Max 3MB to stay within Vercel's 4.5MB serverless limit
-      const maxSize = 3 * 1024 * 1024;
+      // Max 5MB for screenshots
+      const maxSize = 5 * 1024 * 1024;
       if (screenshot.size > maxSize) {
         return NextResponse.json(
-          { error: 'File too large. Maximum size is 3MB. Please compress the image and try again.' },
+          { error: 'File too large. Maximum size is 5MB. Please compress the image and try again.' },
           { status: 400 }
         );
       }
