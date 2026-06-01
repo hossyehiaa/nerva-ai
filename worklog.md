@@ -72,3 +72,30 @@ Stage Summary:
 - Payment upload flow should now work (was broken because DB was unreachable)
 - All environment variables properly set on Vercel
 - Production URL: https://nerva-ai.vercel.app - verified working
+
+---
+Task ID: 2
+Agent: Main Agent
+Task: Add Forgot Password feature with email reset via Resend
+
+Work Log:
+- Added PasswordReset model to Prisma schema (id, userId, token, expiresAt, used)
+- Updated schema.prisma and schema.postgresql.prisma with new model
+- Pushed schema to Neon PostgreSQL database
+- Created /api/auth/forgot-password endpoint - generates secure token, sends email
+- Created /api/auth/reset-password endpoint - verifies token, updates password, GET+POST
+- Installed resend npm package for email delivery
+- Created email utility (src/lib/email.ts) with beautiful branded HTML templates
+- Template 1: Password reset email with CTA button (expires in 1 hour)
+- Template 2: Password changed confirmation email with security warning
+- Updated LoginPage.tsx with "Forgot password?" link and dedicated forgot password view
+- Created /reset-password page with token verification, password strength indicator, confirm password
+- Added security: token expiration (1hr), token invalidation after use, email enumeration protection
+- Set up RESEND_API_KEY and NEXT_PUBLIC_APP_URL env vars on Vercel
+- Deployed to production at https://nerva-ai.vercel.app
+
+Stage Summary:
+- Complete forgot password flow: click "Forgot password?" → enter email → receive email → click link → set new password → sign in
+- Uses Resend for email delivery (free tier: 100 emails/day)
+- All endpoints verified working on production
+- User needs to set their own RESEND_API_KEY on Vercel (currently placeholder)
